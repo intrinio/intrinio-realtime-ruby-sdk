@@ -57,7 +57,7 @@ end
 
 ## Handling Quotes
 
-When handling quotes, make sure to do so in a non-blocking fashion. We recommend using the (thread)[https://github.com/meh/ruby-thread] gem to setup a thread pool for operations like writing quotes to database (or anything else involving time-consuming I/O). If your handling code blocks, no new quotes will be received until the code is finished. So in order to make sure you receive all incoming quotes, handle the individual quotes with a thread pool. For listening to individual security channels, we recommend a thread pool size of 50. For the $lobby channel, we recommend 500 or higher. If you find that the quotes are not being processed quickly enough, increase the pool size - it is likely that they are being backed up in the thread pool's backlog (which you can check by accessing `pool.backlog`).
+When handling quotes, make sure to do so in a non-blocking fashion. We recommend using the [thread](https://github.com/meh/ruby-thread) gem to setup a thread pool for operations like writing quotes to database (or anything else involving time-consuming I/O). If your handling code blocks, no new quotes will be received until the code is finished. So in order to make sure you receive all incoming quotes, handle the individual quotes with a thread pool. For listening to individual security channels, we recommend a thread pool size of 50. For the $lobby channel, we recommend 500 or higher. If you find that the quotes are not being processed quickly enough, increase the pool size - it is likely that they are being backed up in the thread pool's backlog (which you can check by accessing `pool.backlog`).
 
 ## Quote Fields
 
