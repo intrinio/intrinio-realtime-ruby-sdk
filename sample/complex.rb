@@ -17,6 +17,7 @@ logger.level = Logger::INFO
 options = {
   username: username, 
   password: password, 
+  provider: Intrinio::Realtime::IEX,
   channels: ["AAPL","GE","MSFT"],
   logger: logger
 }

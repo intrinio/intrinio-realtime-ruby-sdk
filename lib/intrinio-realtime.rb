@@ -6,12 +6,13 @@ require 'websocket-client-simple'
 
 module Intrinio
   module Realtime
-    AUTH_URL = "https://realtime.intrinio.com/auth"
-    SOCKET_URL = "wss://realtime.intrinio.com/socket/websocket"
     HEARTBEAT_TIME = 1
-    HEARTBEAT_MSG = {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+    IEX_HEARTBEAT_MSG = {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
     SELF_HEAL_BACKOFFS = [0,100,500,1000,2000,5000]
     DEFAULT_POOL_SIZE = 100
+    IEX = "iex"
+    QUODD = "quodd"
+    PROVIDERS = [IEX, QUODD]
 
     def self.connect(options, &b)
       EM.run do
@@ -28,6 +29,9 @@ module Intrinio
         @username = options[:username]
         @password = options[:password]
         raise "Username and password are required" if @username.nil? || @username.empty? || @password.nil? || @password.empty?
+        
+        @provider = options[:provider]
+        raise "Provider must be 'quodd' or 'iex'" unless PROVIDERS.include?(@provider)
         
         @channels = []
         @channels = parse_channels(options[:channels]) if options[:channels]
@@ -50,6 +54,10 @@ module Intrinio
         @selfheal_timer = nil
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
         @ws = nil
+      end
+      
+      def provider
+        @provider
       end
       
       def join(*channels)
@@ -97,7 +105,7 @@ module Intrinio
             refresh_token()
             refresh_websocket()
           rescue StandardError => e
-            error("Connection error: #{e}")
+            error("Connection error: #{e} \n#{e.backtrace.join("\n")}")
             try_self_heal()
           end
         end
@@ -119,7 +127,7 @@ module Intrinio
       def refresh_token
         @token = nil
         
-        response =  HTTP.basic_auth(:user => @username, :pass => @password).get(AUTH_URL)
+        response =  HTTP.basic_auth(:user => @username, :pass => @password).get(auth_url)
         return fatal("Unable to authorize") if response.status == 401
         return fatal("Could not get auth token") if response.status != 200
         
@@ -127,8 +135,18 @@ module Intrinio
         debug "Token refreshed"
       end
       
+      def auth_url 
+        case @provider 
+        when IEX then "https://realtime.intrinio.com/auth"
+        when QUODD then "https://api.intrinio.com/token?type=QUODD"
+        end
+      end
+      
       def socket_url 
-        URI.escape(SOCKET_URL + "?vsn=1.0.0&token=#{@token}")
+        case @provider 
+        when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
+        when QUODD then URI.escape("ws://www6.quodd.com/WebStreamer/webStreamer/intrinio/#{@token}")
+        end
       end
       
       def refresh_websocket
@@ -154,8 +172,19 @@ module Intrinio
           
           begin
             json = JSON.parse(message)
-            if json["event"] == "quote"
-              quote = json["payload"]
+
+            quote = case me.send(:provider)
+            when IEX
+              if json["event"] == "quote"
+                json["payload"]
+              end
+            when QUODD
+              if json["action"] == "quotes" || json["action"] == "trades"
+                json
+              end
+            end
+            
+            if quote
               me.send :process_quote, quote
             end
           rescue StandardError => e
@@ -177,28 +206,16 @@ module Intrinio
         # Join new channels
         new_channels = @channels - @joined_channels
         new_channels.each do |channel|
-          msg = {
-            topic: parse_topic(channel),
-            event: "phx_join",
-            payload: {},
-            ref: nil
-          }.to_json
-          
-          @ws.send(msg)
+          msg = join_message(channel)
+          @ws.send(msg.to_json)
           info "Joined #{channel}"
         end
         
         # Leave old channels
         old_channels = @joined_channels - @channels
         old_channels.each do |channel|
-          msg = {
-            topic: parse_topic(channel),
-            event: 'phx_leave',
-            payload: {},
-            ref: nil
-          }.to_json
-          
-          @ws.send(msg)
+          msg = leave_message(channel)
+          @ws.send(msg.to_json)
           info "Left #{channel}"
         end
         
@@ -210,8 +227,16 @@ module Intrinio
       def start_heartbeat
         EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
         @heartbeat_timer = EM.add_periodic_timer(HEARTBEAT_TIME) do
-          debug "Heartbeat"
-          @ws.send(HEARTBEAT_MSG)
+          if msg = heartbeat_msg()
+            @ws.send(msg)
+            debug "Heartbeat"
+          end
+        end
+      end
+      
+      def heartbeat_msg
+        case @provider 
+        when IEX then IEX_HEARTBEAT_MSG
         end
       end
       
@@ -273,7 +298,14 @@ module Intrinio
         nil
       end
       
-      def parse_topic(channel)
+      def parse_channels(channels)
+        channels.flatten!
+        channels.uniq!
+        channels.compact!
+        channels
+      end
+      
+      def parse_iex_topic(channel)
         case channel
         when "$lobby"
           "iex:lobby"
@@ -284,11 +316,38 @@ module Intrinio
         end
       end
       
-      def parse_channels(channels)
-        channels.flatten!
-        channels.uniq!
-        channels.compact!
-        channels
+      def join_message(channel)
+        case @provider 
+        when IEX
+          {
+            topic: parse_iex_topic(channel),
+            event: "phx_join",
+            payload: {},
+            ref: nil
+          }
+        when QUODD
+          {
+            ticker: channel,
+            action: "subscribe"
+          }
+        end
+      end
+      
+      def leave_message(channel)
+        case @provider 
+        when IEX
+          {
+            topic: parse_iex_topic(channel),
+            event: "phx_leave",
+            payload: {},
+            ref: nil
+          }
+        when QUODD
+          {
+            ticker: channel,
+            action: "unsubscribe"
+          }
+        end
       end
     end
   end
