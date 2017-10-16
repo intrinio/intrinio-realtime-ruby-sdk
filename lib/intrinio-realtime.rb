@@ -6,10 +6,8 @@ require 'websocket-client-simple'
 
 module Intrinio
   module Realtime
-    HEARTBEAT_TIME = 1
-    IEX_HEARTBEAT_MSG = {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+    HEARTBEAT_TIME = 3
     SELF_HEAL_BACKOFFS = [0,100,500,1000,2000,5000]
-    DEFAULT_POOL_SIZE = 100
     IEX = "iex"
     QUODD = "quodd"
     PROVIDERS = [IEX, QUODD]
@@ -157,12 +155,15 @@ module Intrinio
         @joined_channels = []
         
         @ws = ws = WebSocket::Client::Simple.connect(socket_url)
+        me.send :info, "Connection opening"
 
         ws.on :open do
-          me.send :ready, true
           me.send :info, "Connection established"
+          me.send :ready, true
+          if me.send(:provider) == IEX
+            me.send :refresh_channels
+          end
           me.send :start_heartbeat
-          me.send :refresh_channels
           me.send :stop_self_heal
         end
 
@@ -179,17 +180,23 @@ module Intrinio
                 json["payload"]
               end
             when QUODD
-              if json["action"] == "quotes" || json["action"] == "trades"
-                json
+              if json["event"] == "info" && json["data"]["message"] == "Connected"
+                me.send :refresh_channels
+              elsif json["event"] == "quote" || json["event"] == "trade"
+                json["data"]
               end
             end
             
-            if quote
+            if quote && quote.is_a?(Hash)
               me.send :process_quote, quote
             end
           rescue StandardError => e
             me.send :error, "Could not parse message: #{message} #{e}"
           end
+        end
+        
+        ws.on :close do |e|
+          me.send :disconnect
         end
 
         ws.on :error do |e|
@@ -229,14 +236,15 @@ module Intrinio
         @heartbeat_timer = EM.add_periodic_timer(HEARTBEAT_TIME) do
           if msg = heartbeat_msg()
             @ws.send(msg)
-            debug "Heartbeat"
+            debug "Heartbeat #{msg}"
           end
         end
       end
       
       def heartbeat_msg
         case @provider 
-        when IEX then IEX_HEARTBEAT_MSG
+        when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+        when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
         end
       end
       
@@ -327,8 +335,11 @@ module Intrinio
           }
         when QUODD
           {
-            ticker: channel,
-            action: "subscribe"
+            event: "subscribe",
+            data: {
+              ticker: channel,
+              action: "subscribe"
+            }
           }
         end
       end
@@ -344,8 +355,11 @@ module Intrinio
           }
         when QUODD
           {
-            ticker: channel,
-            action: "unsubscribe"
+            event: "unsubscribe",
+            data: {
+              ticker: channel,
+              action: "unsubscribe"
+            }
           }
         end
       end
