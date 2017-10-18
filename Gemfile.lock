@@ -2,9 +2,9 @@ PATH
   remote: .
   specs:
     intrinio-realtime (1.0.0)
-      eventmachine
-      http
-      websocket-client-simple
+      eventmachine (~> 1.2)
+      http (~> 2.2)
+      websocket-client-simple (~> 0.3)
 
 GEM
   remote: https://rubygems.org/
