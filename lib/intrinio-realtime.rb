@@ -143,7 +143,7 @@ module Intrinio
       def socket_url 
         case @provider 
         when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
-        when QUODD then URI.escape("ws://www6.quodd.com/WebStreamer/webStreamer/intrinio/#{@token}")
+        when QUODD then URI.escape("wss://www5.quodd.com/websocket/webStreamer/intrinio/#{@token}")
         end
       end
       
