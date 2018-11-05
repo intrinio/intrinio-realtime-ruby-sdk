@@ -354,7 +354,7 @@ Special access is required for both lobby channels. [Contact us](mailto:sales@in
 
 ### Cryptoquote
 
-To receive price quotes from IEX, you need to instruct the client to "join" a channel. A channel can be
+To receive price quotes from Cryptoquote, you need to instruct the client to "join" a channel. A channel can be
 * The lobby (`crypto:lobby`) where all message types for all currency pairs are posted
 * The type lobby (`crypto:lobby:{message_type}`) where all messages for the given type for all currency pairs are posted (i.e. `crypto:lobby:trade`)
 * The pair lobby (`crypto:pair:{pair_code}`) where all message types for the provided currency pair are posted (i.e. `crypto:pair:btcusd`)
