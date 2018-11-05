@@ -7,10 +7,11 @@ require 'websocket-client-simple'
 module Intrinio
   module Realtime
     HEARTBEAT_TIME = 3
-    SELF_HEAL_BACKOFFS = [0,100,500,1000,2000,5000]
-    IEX = "iex"
-    QUODD = "quodd"
-    PROVIDERS = [IEX, QUODD]
+    SELF_HEAL_BACKOFFS = [0, 100, 500, 1000, 2000, 5000].freeze
+    IEX = "iex".freeze
+    QUODD = "quodd".freeze
+    CRYPTOQUOTE = "cryptoquote".freeze
+    PROVIDERS = [IEX, QUODD, CRYPTOQUOTE].freeze
 
     def self.connect(options, &b)
       EM.run do
@@ -21,6 +22,7 @@ module Intrinio
     end
 
     class Client
+
       def initialize(options) 
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
         
@@ -137,6 +139,7 @@ module Intrinio
         case @provider 
         when IEX then "https://realtime.intrinio.com/auth"
         when QUODD then "https://api.intrinio.com/token?type=QUODD"
+        when CRYPTOQUOTE then "https://crypo.intrinio.com/auth"
         end
       end
       
@@ -144,6 +147,7 @@ module Intrinio
         case @provider 
         when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         when QUODD then URI.escape("wss://www5.quodd.com/websocket/webStreamer/intrinio/#{@token}")
+        when CRYPTOQUOTE then URI.escape("wss://crypto.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         end
       end
       
@@ -160,7 +164,7 @@ module Intrinio
         ws.on :open do
           me.send :info, "Connection established"
           me.send :ready, true
-          if me.send(:provider) == IEX
+          if me.send(:provider) == IEX || me.send(:provider) == CRYPTOQUOTE
             me.send :refresh_channels
           end
           me.send :start_heartbeat
@@ -184,6 +188,10 @@ module Intrinio
                 me.send :refresh_channels
               elsif json["event"] == "quote" || json["event"] == "trade"
                 json["data"]
+              end
+            when CRYPTOQUOTE
+              if json["event"] == "message"
+                json["payload"]
               end
             end
             
@@ -245,6 +253,7 @@ module Intrinio
         case @provider 
         when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
+        when CRYPTOQUOTE then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         end
       end
       
@@ -341,6 +350,13 @@ module Intrinio
               action: "subscribe"
             }
           }
+        when CRYPTOQUOTE
+          {
+            topic: channel,
+            event: "phx_join",
+            payload: {},
+            ref: nil
+          }
         end
       end
       
@@ -361,8 +377,16 @@ module Intrinio
               action: "unsubscribe"
             }
           }
+        when CRYPTOQUOTE
+          {
+            topic: channel,
+            event: "phx_leave",
+            payload: {},
+            ref: nil
+          }
         end
       end
+
     end
   end
 end
