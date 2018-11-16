@@ -144,20 +144,28 @@ module Intrinio
       end
       
       def auth_url 
+        url = ""
+
         case @provider 
         when IEX
-          if @api_key
-            "https://realtime.intrinio.com/auth?api_key=#{@api_key}"
-          else 
-            "https://realtime.intrinio.com/auth"
-          end
+          url = "https://realtime.intrinio.com/auth"
         when QUODD
-          if @api_key
-            "https://api.intrinio.com/token?type=QUODD&api_key=#{@api_key}"
-          else
-            "https://api.intrinio.com/token?type=QUODD"
-          end
+          url = "https://api.intrinio.com/token?type=QUODD"
         end
+
+        url = api_auth_url(url) if @api_key
+
+        url
+      end
+
+      def api_auth_url(url)
+        if @api_key.include? "?"
+          url = "#{url}&"
+        else
+          url = "#{url}?"
+        end
+
+        "#{url}api_key=#{@api_key}"
       end
 
       def socket_url 
