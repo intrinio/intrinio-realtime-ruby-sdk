@@ -25,14 +25,19 @@ module Intrinio
 
       def initialize(options) 
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
-        
-        @username = options[:username]
-        @password = options[:password]
-        raise "Username and password are required" if @username.nil? || @username.empty? || @password.nil? || @password.empty?
-        
+
+        @api_key = options[:api_key]
+        raise "API Key was formatted invalidly." if @api_key && !valid_api_key?(@api_key)
+
+        unless @api_key
+          @username = options[:username]
+          @password = options[:password]
+          raise "API Key or Username and password are required" if @username.nil? || @username.empty? || @password.nil? || @password.empty?
+        end
+
         @provider = options[:provider]
         raise "Provider must be 'quodd' or 'iex'" unless PROVIDERS.include?(@provider)
-        
+
         @channels = []
         @channels = parse_channels(options[:channels]) if options[:channels]
         bad_channels = @channels.select{|x| !x.is_a?(String)}
@@ -46,7 +51,7 @@ module Intrinio
           @logger = Logger.new($stdout)
           @logger.level = Logger::INFO
         end
-        
+
         @quotes = EventMachine::Channel.new
         @ready = false
         @joined_channels = []
@@ -55,7 +60,7 @@ module Intrinio
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
         @ws = nil
       end
-      
+
       def provider
         @provider
       end
@@ -126,23 +131,44 @@ module Intrinio
       
       def refresh_token
         @token = nil
-        
-        response =  HTTP.basic_auth(:user => @username, :pass => @password).get(auth_url)
+
+        if @api_key
+          response = HTTP.get(auth_url)
+        else
+          response = HTTP.basic_auth(:user => @username, :pass => @password).get(auth_url)
+        end
+
         return fatal("Unable to authorize") if response.status == 401
         return fatal("Could not get auth token") if response.status != 200
-        
+
         @token = response.body
         debug "Token refreshed"
       end
       
       def auth_url 
+        url = ""
+
         case @provider 
         when IEX then "https://realtime.intrinio.com/auth"
         when QUODD then "https://api.intrinio.com/token?type=QUODD"
         when CRYPTOQUOTE then "https://crypo.intrinio.com/auth"
         end
+
+        url = api_auth_url(url) if @api_key
+
+        url
       end
-      
+
+      def api_auth_url(url)
+        if @api_key.include? "?"
+          url = "#{url}&"
+        else
+          url = "#{url}?"
+        end
+
+        "#{url}api_key=#{@api_key}"
+      end
+
       def socket_url 
         case @provider 
         when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
@@ -150,10 +176,10 @@ module Intrinio
         when CRYPTOQUOTE then URI.escape("wss://crypto.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         end
       end
-      
+
       def refresh_websocket
         me = self
-        
+
         @ws.close() unless @ws.nil?
         @ready = false
         @joined_channels = []
@@ -385,6 +411,12 @@ module Intrinio
             ref: nil
           }
         end
+      end
+
+      def valid_api_key?(api_key)
+        return false unless api_key.is_a?(String)
+        return false if api_key.empty?
+        true
       end
 
     end

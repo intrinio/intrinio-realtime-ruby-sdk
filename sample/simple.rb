@@ -5,8 +5,7 @@ require 'intrinio-realtime'
 require 'thread/pool'
 
 # Provide your Intrinio API access keys (found in https://intrinio.com/account)
-username = "YOUR_INTRINIO_API_USERNAME"
-password = "YOUR_INTRINIO_API_PASSWORD"
+api_key = "YOUR_INTRINIO_API_KEY"
 
 # Setup a logger
 logger = Logger.new($stdout)
@@ -14,8 +13,7 @@ logger.level = Logger::INFO
 
 # Specify options
 options = {
-  username: username, 
-  password: password, 
+  api_key: api_key,
   provider: Intrinio::Realtime::IEX,
   channels: ["MSFT","AAPL","GE"],
   logger: logger
