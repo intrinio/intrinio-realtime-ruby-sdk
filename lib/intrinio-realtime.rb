@@ -149,9 +149,9 @@ module Intrinio
         url = ""
 
         case @provider 
-        when IEX then "https://realtime.intrinio.com/auth"
-        when QUODD then "https://api.intrinio.com/token?type=QUODD"
-        when CRYPTOQUOTE then "https://crypo.intrinio.com/auth"
+        when IEX then url = "https://realtime.intrinio.com/auth"
+        when QUODD then url = "https://api.intrinio.com/token?type=QUODD"
+        when CRYPTOQUOTE then url = "https://crypo.intrinio.com/auth"
         end
 
         url = api_auth_url(url) if @api_key
