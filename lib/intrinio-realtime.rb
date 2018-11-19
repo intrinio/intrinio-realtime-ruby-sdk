@@ -216,7 +216,7 @@ module Intrinio
                 json["data"]
               end
             when CRYPTOQUOTE
-              if json["event"] == "message"
+              if json["event"] == "book_update" || json["event"] == "ticker" || json["event"] == "trade"
                 json["payload"]
               end
             end
