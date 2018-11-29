@@ -23,8 +23,7 @@ require 'intrinio-realtime'
 require 'thread/pool'
 
 # Provide your Intrinio API access keys (found in https://intrinio.com/account)
-username = "YOUR_INTRINIO_API_USERNAME"
-password = "YOUR_INTRINIO_API_PASSWORD"
+api_key = "YOUR_INTRINIO_API_KEY"
 
 # Setup a logger
 logger = Logger.new($stdout)
@@ -32,8 +31,7 @@ logger.level = Logger::INFO
 
 # Specify options
 options = {
-  username: username, 
-  password: password, 
+  api_key: api_key,
   provider: Intrinio::Realtime::IEX,
   channels: ["MSFT","AAPL","GE"],
   logger: logger
@@ -206,15 +204,14 @@ To receive price quotes from IEX, you need to instruct the client to "join" a ch
 Special access is required for both lobby channels. [Contact us](mailto:sales@intrinio.com) for more information.
 
 ## API Keys
-You will receive your Intrinio API Username and Password after [creating an account](https://intrinio.com/signup). You will need a subscription to a [realtime data feed](https://intrinio.com/marketplace/data/prices/realtime) as well.
+You will receive your Intrinio API Key after [creating an account](https://intrinio.com/signup). You will need a subscription to a [realtime data feed](https://intrinio.com/marketplace/data/prices/realtime) as well.
 
 ## Documentation
 
 ### Methods
 
 `Intrinio::Realtime.connect(options, &block)` - Connects to the Intrinio Realtime feed and provides quotes to the given block.
-* **Parameter** `options.username`: Your Intrinio API Username
-* **Parameter** `options.password`: Your Intrinio API Password
+* **Parameter** `options.api_key`: Your Intrinio API Key
 * **Parameter** `options.provider`: The real-time data provider to use (either `Intrinio::Realtime::IEX` or `Intrinio::Realtime::QUODD`)
 * **Parameter** `options.channels`: (optional) An array of channels to join after connecting
 * **Parameter** `options.logger`: (optional) A Ruby logger to use for logging
@@ -228,15 +225,13 @@ end
 ---------
 
 `Intrinio::Realtime::Client.new(options)` - Creates a new instance of the Intrinio Realtime Client.
-* **Parameter** `options.username`: Your Intrinio API Username
-* **Parameter** `options.password`: Your Intrinio API Password
+* **Parameter** `options.api_key`: Your Intrinio API Key
 * **Parameter** `options.provider`: The real-time data provider to use (either `Intrinio::Realtime::IEX` or `Intrinio::Realtime::QUODD`)
 * **Parameter** `options.channels`: (optional) An array of channels to join after connecting
 * **Parameter** `options.logger`: (optional) A Ruby logger to use for logging
 ```ruby
 options = {
-  username: username, 
-  password: password, 
+  api_key: api_key,
   provider: Intrinio::Realtime::IEX,
   channels: ["MSFT","AAPL","GE"]
 }
