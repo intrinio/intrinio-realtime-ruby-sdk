@@ -11,7 +11,8 @@ module Intrinio
     IEX = "iex".freeze
     QUODD = "quodd".freeze
     CRYPTOQUOTE = "cryptoquote".freeze
-    PROVIDERS = [IEX, QUODD, CRYPTOQUOTE].freeze
+    FXCM = "fxcm".freeze
+    PROVIDERS = [IEX, QUODD, CRYPTOQUOTE, FXCM].freeze
 
     def self.connect(options, &b)
       EM.run do
@@ -152,6 +153,7 @@ module Intrinio
         when IEX then url = "https://realtime.intrinio.com/auth"
         when QUODD then url = "https://api.intrinio.com/token?type=QUODD"
         when CRYPTOQUOTE then url = "https://crypto.intrinio.com/auth"
+        when FXCM then url = "https://fxcm.intrinio.com/auth"
         end
 
         url = api_auth_url(url) if @api_key
@@ -174,6 +176,7 @@ module Intrinio
         when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         when QUODD then URI.escape("wss://www5.quodd.com/websocket/webStreamer/intrinio/#{@token}")
         when CRYPTOQUOTE then URI.escape("wss://crypto.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
+        when FXCM then URI.escape("wss://fxcm.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         end
       end
 
@@ -190,7 +193,7 @@ module Intrinio
         ws.on :open do
           me.send :info, "Connection established"
           me.send :ready, true
-          if me.send(:provider) == IEX || me.send(:provider) == CRYPTOQUOTE
+          if me.send(:provider) == IEX || me.send(:provider) == CRYPTOQUOTE || me.send(:provider) == FXCM
             me.send :refresh_channels
           end
           me.send :start_heartbeat
@@ -217,6 +220,10 @@ module Intrinio
               end
             when CRYPTOQUOTE
               if json["event"] == "book_update" || json["event"] == "ticker" || json["event"] == "trade"
+                json["payload"]
+              end
+            when FXCM
+              if json["event"] == "price_update"
                 json["payload"]
               end
             end
@@ -280,6 +287,7 @@ module Intrinio
         when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
         when CRYPTOQUOTE then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+        when FXCM then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         end
       end
       
@@ -383,6 +391,13 @@ module Intrinio
             payload: {},
             ref: nil
           }
+        when FXCM
+          {
+            topic: channel,
+            event: "phx_join",
+            payload: {},
+            ref: nil
+          }
         end
       end
       
@@ -404,6 +419,13 @@ module Intrinio
             }
           }
         when CRYPTOQUOTE
+          {
+            topic: channel,
+            event: "phx_leave",
+            payload: {},
+            ref: nil
+          }
+        when FXCM
           {
             topic: channel,
             event: "phx_leave",
