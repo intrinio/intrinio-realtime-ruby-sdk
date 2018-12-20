@@ -384,14 +384,7 @@ module Intrinio
               action: "subscribe"
             }
           }
-        when CRYPTOQUOTE
-          {
-            topic: channel,
-            event: "phx_join",
-            payload: {},
-            ref: nil
-          }
-        when FXCM
+        when CRYPTOQUOTE, FXCM
           {
             topic: channel,
             event: "phx_join",
@@ -418,14 +411,7 @@ module Intrinio
               action: "unsubscribe"
             }
           }
-        when CRYPTOQUOTE
-          {
-            topic: channel,
-            event: "phx_leave",
-            payload: {},
-            ref: nil
-          }
-        when FXCM
+        when CRYPTOQUOTE, FXCM
           {
             topic: channel,
             event: "phx_leave",
