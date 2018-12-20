@@ -286,8 +286,7 @@ module Intrinio
         case @provider 
         when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
-        when CRYPTOQUOTE then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
-        when FXCM then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+        when CRYPTOQUOTE, FXCM then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         end
       end
       
