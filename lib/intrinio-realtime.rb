@@ -193,7 +193,7 @@ module Intrinio
         ws.on :open do
           me.send :info, "Connection established"
           me.send :ready, true
-          if me.send(:provider) == IEX || me.send(:provider) == CRYPTOQUOTE || me.send(:provider) == FXCM
+          if [IEX, CRYPTOQUOTE, FXCM].include?(me.send(:provider))
             me.send :refresh_channels
           end
           me.send :start_heartbeat
