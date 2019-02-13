@@ -324,8 +324,8 @@ To receive price quotes from FXCM, you need to instruct the client to "join" a c
 
 The Intrinio REST API provides a listing of pairs, currencies, and their corresponding codes:
 
-* [FX Currencies](https://intrinio.com/documentation/api/currencies)
-* [FX Currency Pairs](https://intrinio.com/documentation/api/currency_pairs)
+* [FX Currencies](https://docs.intrinio.com/documentation/download/currencies)
+* [FX Currency Pairs](https://docs.intrinio.com/documentation/download/currency_pairs)
 
 ## API Keys
 You will receive your Intrinio API Key after [creating an account](https://intrinio.com/signup). You will need a subscription to a [realtime data feed](https://intrinio.com/marketplace/data/prices/realtime) as well.
