@@ -11,7 +11,8 @@ module Intrinio
     IEX = "iex".freeze
     QUODD = "quodd".freeze
     CRYPTOQUOTE = "cryptoquote".freeze
-    PROVIDERS = [IEX, QUODD, CRYPTOQUOTE].freeze
+    FXCM = "fxcm".freeze
+    PROVIDERS = [IEX, QUODD, CRYPTOQUOTE, FXCM].freeze
 
     def self.connect(options, &b)
       EM.run do
@@ -36,7 +37,7 @@ module Intrinio
         end
 
         @provider = options[:provider]
-        raise "Provider must be 'quodd' or 'iex'" unless PROVIDERS.include?(@provider)
+        raise "Provider must be 'CRYPTOQUOTE', 'FXCM', 'IEX', or 'QUODD'" unless PROVIDERS.include?(@provider)
 
         @channels = []
         @channels = parse_channels(options[:channels]) if options[:channels]
@@ -152,6 +153,7 @@ module Intrinio
         when IEX then url = "https://realtime.intrinio.com/auth"
         when QUODD then url = "https://api.intrinio.com/token?type=QUODD"
         when CRYPTOQUOTE then url = "https://crypto.intrinio.com/auth"
+        when FXCM then url = "https://fxcm.intrinio.com/auth"
         end
 
         url = api_auth_url(url) if @api_key
@@ -174,6 +176,7 @@ module Intrinio
         when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         when QUODD then URI.escape("wss://www5.quodd.com/websocket/webStreamer/intrinio/#{@token}")
         when CRYPTOQUOTE then URI.escape("wss://crypto.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
+        when FXCM then URI.escape("wss://fxcm.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         end
       end
 
@@ -190,7 +193,7 @@ module Intrinio
         ws.on :open do
           me.send :info, "Connection established"
           me.send :ready, true
-          if me.send(:provider) == IEX || me.send(:provider) == CRYPTOQUOTE
+          if [IEX, CRYPTOQUOTE, FXCM].include?(me.send(:provider))
             me.send :refresh_channels
           end
           me.send :start_heartbeat
@@ -204,22 +207,31 @@ module Intrinio
           begin
             json = JSON.parse(message)
 
-            quote = case me.send(:provider)
-            when IEX
-              if json["event"] == "quote"
-                json["payload"]
-              end
-            when QUODD
-              if json["event"] == "info" && json["data"]["message"] == "Connected"
-                me.send :refresh_channels
-              elsif json["event"] == "quote" || json["event"] == "trade"
-                json["data"]
-              end
-            when CRYPTOQUOTE
-              if json["event"] == "book_update" || json["event"] == "ticker" || json["event"] == "trade"
-                json["payload"]
-              end
+            if json["event"] == "phx_reply" && json["payload"]["status"] == "error"
+              me.send :error, json["payload"]["response"]
             end
+
+            quote =
+              case me.send(:provider)
+              when IEX
+                if json["event"] == "quote"
+                  json["payload"]
+                end
+              when QUODD
+                if json["event"] == "info" && json["data"]["message"] == "Connected"
+                  me.send :refresh_channels
+                elsif json["event"] == "quote" || json["event"] == "trade"
+                  json["data"]
+                end
+              when CRYPTOQUOTE
+                if json["event"] == "book_update" || json["event"] == "ticker" || json["event"] == "trade"
+                  json["payload"]
+                end
+              when FXCM
+                if json["event"] == "price_update"
+                  json["payload"]
+                end
+              end
             
             if quote && quote.is_a?(Hash)
               me.send :process_quote, quote
@@ -279,7 +291,7 @@ module Intrinio
         case @provider 
         when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
-        when CRYPTOQUOTE then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+        when CRYPTOQUOTE, FXCM then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         end
       end
       
@@ -376,7 +388,7 @@ module Intrinio
               action: "subscribe"
             }
           }
-        when CRYPTOQUOTE
+        when CRYPTOQUOTE, FXCM
           {
             topic: channel,
             event: "phx_join",
@@ -403,7 +415,7 @@ module Intrinio
               action: "unsubscribe"
             }
           }
-        when CRYPTOQUOTE
+        when CRYPTOQUOTE, FXCM
           {
             topic: channel,
             event: "phx_leave",
