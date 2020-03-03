@@ -242,7 +242,9 @@ module Intrinio
         end
         
         ws.on :close do |e|
-          me.send :disconnect
+          me.send :ready, false
+          me.send :error, "Connection closed: #{e}"
+          me.send :try_self_heal
         end
 
         ws.on :error do |e|
