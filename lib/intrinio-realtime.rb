@@ -162,7 +162,7 @@ module Intrinio
       end
 
       def api_auth_url(url)
-        if @api_key.include? "?"
+        if url.include? "?"
           url = "#{url}&"
         else
           url = "#{url}?"
