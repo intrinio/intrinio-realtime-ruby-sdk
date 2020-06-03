@@ -347,14 +347,6 @@ module Intrinio
         nil
       end
       
-      def fatal(message)
-        message = "IntrinioRealtime | #{message}"
-        @logger.fatal(message) rescue
-        EM.stop_event_loop
-        throw :fatal
-        nil
-      end
-      
       def parse_channels(channels)
         channels.flatten!
         channels.uniq!
