@@ -15,10 +15,12 @@ module Intrinio
     PROVIDERS = [IEX, QUODD, CRYPTOQUOTE, FXCM].freeze
 
     def self.connect(options, &b)
-      EM.run do
-        client = ::Intrinio::Realtime::Client.new(options)
-        client.on_quote(&b)
-        client.connect()
+      loop do
+        EM.run do
+          client = ::Intrinio::Realtime::Client.new(options)
+          client.on_quote(&b)
+          client.connect()
+        end
       end
     end
 
