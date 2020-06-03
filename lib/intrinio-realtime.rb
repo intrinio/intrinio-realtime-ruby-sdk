@@ -106,16 +106,14 @@ module Intrinio
         return warn("Already connected!") if @ready
         debug "Connecting..."
         
-        catch :fatal do
-          begin
-            @closing = false
-            @ready = false
-            refresh_token()
-            refresh_websocket()
-          rescue StandardError => e
-            error("Connection error: #{e} \n#{e.backtrace.join("\n")}")
-            try_self_heal()
-          end
+        begin
+          @closing = false
+          @ready = false
+          refresh_token()
+          refresh_websocket()
+        rescue StandardError => e
+          error("Connection error: #{e} \n#{e.backtrace.join("\n")}")
+          try_self_heal()
         end
       end
       
@@ -141,8 +139,8 @@ module Intrinio
           response = HTTP.basic_auth(:user => @username, :pass => @password).get(auth_url)
         end
 
-        return fatal("Unable to authorize") if response.status == 401
-        return fatal("Could not get auth token") if response.status != 200
+        raise "unable to authorize" if response.status == 401
+        raise "could not get auth token" if response.status != 200
 
         @token = response.body
         debug "Token refreshed"
@@ -304,8 +302,8 @@ module Intrinio
       end
       
       def try_self_heal
-        return if @closing
         debug "Attempting to self-heal"
+        return if @closing
         
         time = @selfheal_backoffs.first
         @selfheal_backoffs.delete_at(0) if @selfheal_backoffs.count > 1
