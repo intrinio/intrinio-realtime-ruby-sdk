@@ -26,8 +26,10 @@ module Intrinio
 
     class Client
 
-      def initialize(options) 
+      def initialize(options)
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
+
+        @error_handler = options[:error_handler] if options[:error_handler]
 
         @api_key = options[:api_key]
         raise "API Key was formatted invalidly." if @api_key && !valid_api_key?(@api_key)
@@ -112,7 +114,7 @@ module Intrinio
           refresh_token()
           refresh_websocket()
         rescue StandardError => e
-          error("Connection error: #{e} \n#{e.backtrace.join("\n")}")
+          error("Connection error: #{e} \n#{e.backtrace.join("\n")}", exception: e)
           try_self_heal()
         end
       end
@@ -341,9 +343,13 @@ module Intrinio
         nil
       end
       
-      def error(message)
-        message = "IntrinioRealtime | #{message}"
-        @logger.error(message) rescue
+      def error(message, exception: nil)
+        if @error_handler
+          @error_handler.call(exception)
+        else
+          message = "IntrinioRealtime | #{message}"
+          @logger.error(message)
+        end
         nil
       end
       

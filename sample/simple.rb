@@ -16,7 +16,8 @@ options = {
   api_key: api_key,
   provider: Intrinio::Realtime::IEX,
   channels: ["MSFT","AAPL","GE"],
-  logger: logger
+  logger: logger,
+  error_handler: proc { |exception| logger.error(exception.message) }
 }
 
 # Setup a pool of 50 threads to handle quotes
