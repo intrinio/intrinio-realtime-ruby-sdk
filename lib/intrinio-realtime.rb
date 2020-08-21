@@ -345,6 +345,11 @@ module Intrinio
       
       def error(message, exception: nil)
         if @error_handler
+          unless exception
+            exception = StandardError.new(message)
+            exception.set_backtrace(caller)
+          end
+          
           @error_handler.call(exception)
         else
           message = "IntrinioRealtime | #{message}"
