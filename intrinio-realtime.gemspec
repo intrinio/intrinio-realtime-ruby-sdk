@@ -6,8 +6,8 @@ Gem::Specification.new do |spec|
   spec.version       = "2.2.1"
   spec.authors       = ["Intrinio"]
   spec.email         = ["asolo@intrinio.com"]
-  spec.description   = %q{Intrinio Ruby SDK for Real-Time Stock & Crypto Prices}
-  spec.summary       = %q{Intrinio provides real-time stock & crypto prices from the IEX stock exchange, via a two-way WebSocket connection.}
+  spec.description   = %q{Intrinio Ruby SDK for Real-Time Stock Prices}
+  spec.summary       = %q{Intrinio provides real-time stock prices from the IEX stock exchange, via a two-way WebSocket connection.}
   spec.homepage      = "https://github.com/intrinio/intrinio-realtime-ruby-sdk"
   spec.license       = "GPL-3.0"
   spec.files         = ["lib/intrinio-realtime.rb"]
