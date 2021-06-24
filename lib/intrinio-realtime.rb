@@ -140,7 +140,14 @@ module Intrinio
         end
 
         return fatal("Unable to authorize") if response.status == 401
-        return fatal("Could not get auth token") if response.status != 200
+        if response.status != 200
+          begin
+            info("#{response.status} #{response.body}")
+          rescue StandardError
+            info("#{response.status}")
+          end
+          return fatal("Could not get auth token")
+        end
 
         @token = response.body
         debug "Token refreshed"
