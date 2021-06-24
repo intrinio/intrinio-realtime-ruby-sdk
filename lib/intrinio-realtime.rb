@@ -24,7 +24,7 @@ module Intrinio
 
     class Client
 
-      def initialize(options) 
+      def initialize(options)
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
 
         @api_key = options[:api_key]
@@ -45,7 +45,7 @@ module Intrinio
         raise "Invalid channels to join: #{bad_channels}" unless bad_channels.empty?
 
         if options[:logger] == false
-          @logger = nil 
+          @logger = nil
         elsif !options[:logger].nil?
           @logger = options[:logger]
         else
@@ -65,45 +65,45 @@ module Intrinio
       def provider
         @provider
       end
-      
+
       def join(*channels)
         channels = parse_channels(channels)
         nonconforming = channels.select{|x| !x.is_a?(String)}
         return error("Invalid channels to join: #{nonconforming}") unless nonconforming.empty?
-        
+
         @channels.concat(channels)
         @channels.uniq!
         debug "Joining channels #{channels}"
-        
+
         refresh_channels()
       end
-      
+
       def leave(*channels)
         channels = parse_channels(channels)
         nonconforming = channels.find{|x| !x.is_a?(String)}
         return error("Invalid channels to leave: #{nonconforming}") unless nonconforming.empty?
-        
+
         channels.each{|c| @channels.delete(c)}
         debug "Leaving channels #{channels}"
-        
+
         refresh_channels()
       end
-      
+
       def leave_all
         @channels = []
         debug "Leaving all channels"
         refresh_channels()
       end
-      
+
       def on_quote(&b)
         @quotes.subscribe(&b)
       end
-      
+
       def connect
         raise "Must be run from within an EventMachine run loop" unless EM.reactor_running?
         return warn("Already connected!") if @ready
         debug "Connecting..."
-        
+
         catch :fatal do
           begin
             @closing = false
@@ -116,7 +116,7 @@ module Intrinio
           end
         end
       end
-      
+
       def disconnect
         EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
@@ -127,9 +127,9 @@ module Intrinio
         @ws.close() if @ws
         info "Connection closed"
       end
-      
+
       private
-      
+
       def refresh_token
         @token = nil
 
@@ -145,11 +145,11 @@ module Intrinio
         @token = response.body
         debug "Token refreshed"
       end
-      
-      def auth_url 
+
+      def auth_url
         url = ""
 
-        case @provider 
+        case @provider
         when IEX then url = "https://realtime.intrinio.com/auth"
         when QUODD then url = "https://api.intrinio.com/token?type=QUODD"
         when CRYPTOQUOTE then url = "https://crypto.intrinio.com/auth"
@@ -171,8 +171,8 @@ module Intrinio
         "#{url}api_key=#{@api_key}"
       end
 
-      def socket_url 
-        case @provider 
+      def socket_url
+        case @provider
         when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
         when QUODD then URI.escape("wss://www5.quodd.com/websocket/webStreamer/intrinio/#{@token}")
         when CRYPTOQUOTE then URI.escape("wss://crypto.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
@@ -186,7 +186,7 @@ module Intrinio
         @ws.close() unless @ws.nil?
         @ready = false
         @joined_channels = []
-        
+
         @ws = ws = WebSocket::Client::Simple.connect(socket_url)
         me.send :info, "Connection opening"
 
@@ -203,7 +203,7 @@ module Intrinio
         ws.on :message do |frame|
           message = frame.data
           me.send :debug, "Message: #{message}"
-          
+
           begin
             json = JSON.parse(message)
 
@@ -232,7 +232,7 @@ module Intrinio
                   json["payload"]
                 end
               end
-            
+
             if quote && quote.is_a?(Hash)
               me.send :process_quote, quote
             end
@@ -240,7 +240,7 @@ module Intrinio
             me.send :error, "Could not parse message: #{message} #{e}"
           end
         end
-        
+
         ws.on :close do |e|
           me.send :ready, false
           me.send :error, "Connection closed: #{e}"
@@ -253,11 +253,11 @@ module Intrinio
           me.send :try_self_heal
         end
       end
-      
+
       def refresh_channels
         return unless @ready
         debug "Refreshing channels"
-        
+
         # Join new channels
         new_channels = @channels - @joined_channels
         new_channels.each do |channel|
@@ -265,7 +265,7 @@ module Intrinio
           @ws.send(msg.to_json)
           info "Joined #{channel}"
         end
-        
+
         # Leave old channels
         old_channels = @joined_channels - @channels
         old_channels.each do |channel|
@@ -273,12 +273,12 @@ module Intrinio
           @ws.send(msg.to_json)
           info "Left #{channel}"
         end
-        
+
         @channels.uniq!
         @joined_channels = Array.new(@channels)
         debug "Current channels: #{@channels}"
       end
-      
+
       def start_heartbeat
         EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
         @heartbeat_timer = EM.add_periodic_timer(HEARTBEAT_TIME) do
@@ -288,80 +288,93 @@ module Intrinio
           end
         end
       end
-      
+
       def heartbeat_msg
-        case @provider 
+        case @provider
         when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
         when CRYPTOQUOTE, FXCM then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
         end
       end
-      
+
       def stop_heartbeat
         EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
       end
-      
+
       def try_self_heal
         return if @closing
         debug "Attempting to self-heal"
-        
+
         time = @selfheal_backoffs.first
         @selfheal_backoffs.delete_at(0) if @selfheal_backoffs.count > 1
-        
+
         EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
-        
+
         @selfheal_timer = EM.add_timer(time/1000) do
           connect()
         end
       end
-      
+
       def stop_self_heal
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
       end
-      
+
       def ready(val)
         @ready = val
       end
-      
+
       def process_quote(quote)
         @quotes.push(quote)
       end
-      
+
       def debug(message)
         message = "IntrinioRealtime | #{message}"
-        @logger.debug(message) rescue
-        nil
+        begin
+          @logger.debug(message)
+        rescue StandardError
+          nil
+        end
       end
-      
+
       def info(message)
         message = "IntrinioRealtime | #{message}"
-        @logger.info(message) rescue
-        nil
+        begin
+          @logger.info(message)
+        rescue StandardError
+          nil
+        end
       end
-      
+
       def error(message)
         message = "IntrinioRealtime | #{message}"
-        @logger.error(message) rescue
-        nil
+        begin
+          @logger.error(message)
+        rescue StandardError
+          nil
+        end
       end
-      
+
       def fatal(message)
         message = "IntrinioRealtime | #{message}"
-        @logger.fatal(message) rescue
+        begin
+          @logger.fatal(message)
+        rescue StandardError
+          nil
+        end
         EM.stop_event_loop
         throw :fatal
         nil
       end
-      
+
       def parse_channels(channels)
         channels.flatten!
         channels.uniq!
         channels.compact!
         channels
       end
-      
+
       def parse_iex_topic(channel)
         case channel
         when "$lobby"
@@ -372,9 +385,9 @@ module Intrinio
           "iex:securities:#{channel}"
         end
       end
-      
+
       def join_message(channel)
-        case @provider 
+        case @provider
         when IEX
           {
             topic: parse_iex_topic(channel),
@@ -399,9 +412,9 @@ module Intrinio
           }
         end
       end
-      
+
       def leave_message(channel)
-        case @provider 
+        case @provider
         when IEX
           {
             topic: parse_iex_topic(channel),
