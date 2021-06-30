@@ -15,5 +15,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "http", '~> 2.2'
   spec.add_dependency "eventmachine", '~> 1.2'
-  spec.add_dependency "websocket-client-simple", '~> 0.3'
+  spec.add_dependency "websocket-eventmachine-client", '~> 1.3'
 end
