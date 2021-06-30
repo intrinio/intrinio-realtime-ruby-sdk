@@ -207,8 +207,7 @@ module Intrinio
           me.send :stop_self_heal
         end
 
-        ws.onmessage do |frame|
-          message = frame.data
+        ws.onmessage do |message|
           me.send :debug, "Message: #{message}"
 
           begin
@@ -248,9 +247,9 @@ module Intrinio
           end
         end
 
-        ws.onclose do |e|
+        ws.onclose do |code, reason|
           me.send :ready, false
-          me.send :error, "Connection closed: #{e}"
+          me.send :error, "Connection closed: #{code} #{reason}"
           me.send :try_self_heal
         end
 
