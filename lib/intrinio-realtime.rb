@@ -2,7 +2,7 @@ require 'logger'
 require 'uri'
 require 'http'
 require 'eventmachine'
-require 'websocket-client-simple'
+require 'websocket-eventmachine-client'
 
 module Intrinio
   module Realtime
