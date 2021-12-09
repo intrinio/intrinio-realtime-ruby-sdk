@@ -3,9 +3,10 @@ $:.unshift File.expand_path '../lib', File.dirname(__FILE__)
 require 'rubygems'
 require 'intrinio-realtime'
 require 'thread/pool'
+require 'eventmachine'
 
 # Provide your Intrinio API access keys (found in https://intrinio.com/account)
-api_key = "OjU3ZTM4YTFjMWMzOGQ0ZjRjYTI1YWQxMDUzMzE1ZWJj"
+api_key = ""
 
 # Setup a logger
 logger = Logger.new($stdout)
@@ -15,9 +16,10 @@ logger.level = Logger::INFO
 options = {
   api_key: api_key,
   provider: Intrinio::Realtime::REALTIME,
-  channels: ["MSFT","AAPL","GE"],
+  channels: ["MSFT","AAPL","GE","JNUG","PLXS","GOOG","F","AMZN","JDST"],
   logger: logger,
-  threads: 4
+  threads: 2,
+  trades_only: false
 }
 
 on_trade = -> (trade) {logger.info "TRADE! #{trade}"}

@@ -6,7 +6,7 @@ require 'thread/pool'
 require 'eventmachine'
 
 # Provide your Intrinio API access keys (found in https://intrinio.com/account)
-api_key = "OjU3ZTM4YTFjMWMzOGQ0ZjRjYTI1YWQxMDUzMzE1ZWJj"
+api_key = ""
 
 # Setup a logger
 logger = Logger.new($stdout)
@@ -15,27 +15,18 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::IEX,
+  provider: Intrinio::Realtime::REALTIME,
   channels: ["AAPL","GE","MSFT"],
-  logger: logger
+  logger: logger,
+  threads: 4
 }
 
-# Setup a pool of 50 threads to handle quotes
-pool = Thread.pool(50)
+on_trade = -> (trade) {logger.info "TRADE! #{trade}"}
+on_quote = -> (quote) {logger.info "QUOTE! #{quote}"}
 
-# Run your code in an EventMachine environment for event-driven, continuous execution
 EventMachine.run do
   # Create a client
-  ir = Intrinio::Realtime::Client.new(options)
-  
-  # Handle quotes
-  ir.on_quote do |quote|
-    # Process quote in next available thread
-    pool.process do
-      logger.info "QUOTE! #{quote}"
-      sleep 0.100 # simulate 100ms for I/O operation
-    end
-  end
+  ir = Intrinio::Realtime::Client.new(options, on_trade, on_quote)
   
   # Start listening
   ir.connect()

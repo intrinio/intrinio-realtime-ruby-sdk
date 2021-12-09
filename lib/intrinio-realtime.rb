@@ -49,6 +49,10 @@ module Intrinio
       def total_volume
         @total_volume
       end
+
+      def to_s
+        [@symbol, @price, @size, @timestamp, @total_volume].join(",")
+      end
     end
 
     class Quote
@@ -79,6 +83,10 @@ module Intrinio
       def timestamp
         @timestamp
       end
+
+      def to_s
+        [@symbol, @type, @price, @size, @timestamp].join(",")
+      end
     end
 
     class Client
@@ -86,6 +94,7 @@ module Intrinio
       def initialize(options, on_trade, on_quote)
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
         @messages = Queue.new
+        raise "Unable to create queue." if @messages.nil?
         @on_trade = on_trade
         @on_quote = on_quote
 
@@ -108,7 +117,7 @@ module Intrinio
         raise "Missing option ip_address while in MANUAL mode." if @provider == MANUAL and (@ip_address.nil? || @ip_address.empty?)
 
         @trades_only = options[:trades_only]
-        unless @trades_only
+        if @trades_only.nil?
           @trades_only = false
         end
 
@@ -214,15 +223,19 @@ module Intrinio
       
       private
 
-      def parse_uint64(*data)
+      def queue_message(message)
+        @messages.enq(message)
+      end
+
+      def parse_uint64(data)
         data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('Q<').first
       end
 
-      def parse_int32(*data)
+      def parse_int32(data)
         data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('l<').first
       end
 
-      def parse_uint32(*data)
+      def parse_uint32(data)
         data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('V').first
       end
 
@@ -261,16 +274,31 @@ module Intrinio
       end
 
       def handle_data
+        me = self
+        pop = nil
         loop do
-          pop = @messages.deq
-          data = pop.unpack('C*')
-          start_index = 1
-          count = data[0]
-          # These are grouped (many) messages.
-          # The first byte tells us how many there are.
-          # From there, check the type and symbol length at index 0 of each chunk to know how many bytes each message has.
-          count.times {start_index = handle_message(data, start_index)}
-          puts "Message processed."
+          begin
+            pop = nil
+            data = nil
+            pop = @messages.deq
+            unless pop.nil?
+              begin
+                data = pop.unpack('C*')
+              rescue StandardError => ex
+                me.send :error, "Error unpacking data from queue: #{ex} #{pop}"
+                next
+              end
+              if !data then me.send :error, "Cannot process data.  Data is nil. #{pop}" end
+              start_index = 1
+              count = data[0]
+              # These are grouped (many) messages.
+              # The first byte tells us how many there are.
+              # From there, check the type and symbol length at index 0 of each chunk to know how many bytes each message has.
+              count.times {start_index = handle_message(data, start_index)}
+            end
+          rescue StandardError => e
+            me.send :error, "Error handling message from queue: #{e} #{pop} : #{data} ; count: #{count} ; start index: #{start_index}"
+          end
         end
       end
       
@@ -344,8 +372,8 @@ module Intrinio
           data_message = frame.data
           #me.send :debug, "Message: #{data_message}"
           begin
-            if !data_message.nil?
-              @messages.enq(data_message)
+            unless data_message.nil?
+            then me.send :queue_message, data_message
             end
           rescue StandardError => e
             me.send :error, "Error adding message to queue: #{data_message} #{e}"
@@ -474,11 +502,13 @@ module Intrinio
       end
       
       def join_binary_message(channel)
-        if channel == "lobby"
+        if (channel == "lobby") && (@trades_only == false)
           return [74, 0, 36, 70, 73, 82, 69, 72, 79, 83, 69].pack('C*') #74, not trades only, "$FIREHOSE"
+        elsif (channel == "lobby") && (@trades_only == true)
+          return [74, 1, 36, 70, 73, 82, 69, 72, 79, 83, 69].pack('C*') #74, trades only, "$FIREHOSE"
         else
           bytes = [74, 0]
-          if (@trades_only)
+          if (@trades_only == true)
             bytes[1] = 1
           end
           return bytes.concat(channel.bytes).pack('C*')
