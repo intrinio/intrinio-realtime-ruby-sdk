@@ -16,14 +16,13 @@ logger.level = Logger::INFO
 options = {
   api_key: api_key,
   provider: Intrinio::Realtime::REALTIME,
-  channels: ["MSFT","AAPL","GE","JNUG","PLXS","GOOG","F","AMZN","JDST"],
+  channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
-  threads: 2,
+  threads: 4,
   trades_only: false
 }
 
 on_trade = -> (trade) {logger.info "TRADE! #{trade}"}
-
 on_quote = -> (quote) {logger.info "QUOTE! #{quote}"}
 
 # Start listening for quotes

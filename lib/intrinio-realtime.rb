@@ -93,6 +93,7 @@ module Intrinio
 
       def initialize(options, on_trade, on_quote)
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
+        @stop = false
         @messages = Queue.new
         raise "Unable to create queue." if @messages.nil?
         @on_trade = on_trade
@@ -127,7 +128,6 @@ module Intrinio
         end
 
         @threads = []
-        @thread_quantity.times {@threads << Thread.new{handle_data}}
 
         @channels = []
         @channels = parse_channels(options[:channels]) if options[:channels]
@@ -210,6 +210,17 @@ module Intrinio
         @channels = []
         @joined_channels = []
         @ws.close() if @ws
+        @stop = true
+        sleep(2)
+        @threads.each { |thread|
+          if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
+          then thread.join(8)
+          elsif !thread.nil?
+          then thread.kill
+          end
+        }
+        @threads = []
+        @stop = false
         info "Connection closed"
       end
 
@@ -274,9 +285,10 @@ module Intrinio
       end
 
       def handle_data
+        Thread.current.priority -= 1
         me = self
         pop = nil
-        loop do
+        until @stop do
           begin
             pop = nil
             data = nil
@@ -296,8 +308,11 @@ module Intrinio
               # From there, check the type and symbol length at index 0 of each chunk to know how many bytes each message has.
               count.times {start_index = handle_message(data, start_index)}
             end
+            if pop.nil? then sleep(0.1) end
           rescue StandardError => e
             me.send :error, "Error handling message from queue: #{e} #{pop} : #{data} ; count: #{count} ; start index: #{start_index}"
+          rescue Exception => e
+            #me.send :error, "General error handling message from queue: #{e} #{pop} : #{data} ; count: #{count} ; start index: #{start_index}"
           end
         end
       end
@@ -354,6 +369,19 @@ module Intrinio
         @ws.close() unless @ws.nil?
         @ready = false
         @joined_channels = []
+
+        @stop = true
+        sleep(2)
+        @threads.each { |thread|
+          if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
+          then thread.join(8)
+          elsif !thread.nil?
+          then thread.kill
+          end
+        }
+        @threads = []
+        @stop = false
+        @thread_quantity.times {@threads << Thread.new{handle_data}}
         
         @ws = ws = WebSocket::Client::Simple.connect(socket_url)
         me.send :info, "Connection opening"
@@ -382,7 +410,7 @@ module Intrinio
         
         ws.on :close do |e|
           me.send :ready, false
-          me.send :error, "Connection closed: #{e}"
+          me.send :info, "Connection closing...: #{e}"
           me.send :try_self_heal
         end
 

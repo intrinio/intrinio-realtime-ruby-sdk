@@ -16,9 +16,10 @@ logger.level = Logger::INFO
 options = {
   api_key: api_key,
   provider: Intrinio::Realtime::REALTIME,
-  channels: ["AAPL","GE","MSFT"],
+  channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
-  threads: 4
+  threads: 4,
+  trades_only: false
 }
 
 on_trade = -> (trade) {logger.info "TRADE! #{trade}"}
