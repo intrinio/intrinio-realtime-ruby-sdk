@@ -214,7 +214,7 @@ module Intrinio
         sleep(2)
         @threads.each { |thread|
           if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
-          then thread.join(8)
+          then thread.join(7)
           elsif !thread.nil?
           then thread.kill
           end
@@ -374,7 +374,7 @@ module Intrinio
         sleep(2)
         @threads.each { |thread|
           if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
-          then thread.join(8)
+          then thread.join(7)
           elsif !thread.nil?
           then thread.kill
           end
