@@ -8,28 +8,90 @@ module Intrinio
   module Realtime
     HEARTBEAT_TIME = 3
     SELF_HEAL_BACKOFFS = [0, 100, 500, 1000, 2000, 5000].freeze
-    IEX = "iex".freeze
-    QUODD = "quodd".freeze
-    CRYPTOQUOTE = "cryptoquote".freeze
-    FXCM = "fxcm".freeze
-    PROVIDERS = [IEX, QUODD, CRYPTOQUOTE, FXCM].freeze
+    REALTIME = "REALTIME".freeze
+    MANUAL = "MANUAL".freeze
+    PROVIDERS = [REALTIME, MANUAL].freeze
+    ASK = "Ask".freeze
+    BID = "Bid".freeze
 
-    def self.connect(options, &b)
+    def self.connect(options, on_trade, on_quote)
       EM.run do
-        client = ::Intrinio::Realtime::Client.new(options)
-        client.on_quote(&b)
+        client = ::Intrinio::Realtime::Client.new(options, on_trade, on_quote)
         client.connect()
+      end
+    end
+
+    class Trade
+      def initialize(symbol, price, size, timestamp, total_volume)
+        @symbol = symbol
+        @price = price
+        @size = size
+        @timestamp = timestamp
+        @total_volume = total_volume
+      end
+
+      def symbol
+        @symbol
+      end
+
+      def price
+        @price
+      end
+
+      def size
+        @size
+      end
+
+      def timestamp
+        @timestamp
+      end
+
+      def total_volume
+        @total_volume
+      end
+    end
+
+    class Quote
+      def initialize(type, symbol, price, size, timestamp)
+        @type = type
+        @symbol = symbol
+        @price = price
+        @size = size
+        @timestamp = timestamp
+      end
+
+      def type
+        @type
+      end
+
+      def symbol
+        @symbol
+      end
+
+      def price
+        @price
+      end
+
+      def size
+        @size
+      end
+
+      def timestamp
+        @timestamp
       end
     end
 
     class Client
 
-      def initialize(options) 
+      def initialize(options, on_trade, on_quote)
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
+        @messages = Queue.new
+        @on_trade = on_trade
+        @on_quote = on_quote
 
         @api_key = options[:api_key]
         raise "API Key was formatted invalidly." if @api_key && !valid_api_key?(@api_key)
-
+		
         unless @api_key
           @username = options[:username]
           @password = options[:password]
@@ -37,7 +99,26 @@ module Intrinio
         end
 
         @provider = options[:provider]
-        raise "Provider must be 'CRYPTOQUOTE', 'FXCM', 'IEX', or 'QUODD'" unless PROVIDERS.include?(@provider)
+        unless @provider
+          @provider = REALTIME
+        end
+        raise "Provider must be 'REALTIME' or 'MANUAL'" unless PROVIDERS.include?(@provider)
+
+        @ip_address = options[:ip_address]
+        raise "Missing option ip_address while in MANUAL mode." if @provider == MANUAL and (@ip_address.nil? || @ip_address.empty?)
+
+        @trades_only = options[:trades_only]
+        unless @trades_only
+          @trades_only = false
+        end
+
+        @thread_quantity = options[:threads]
+        unless @thread_quantity
+          @thread_quantity = 4
+        end
+
+        @threads = []
+        @thread_quantity.times {@threads << Thread.new{handle_data}}
 
         @channels = []
         @channels = parse_channels(options[:channels]) if options[:channels]
@@ -53,7 +134,6 @@ module Intrinio
           @logger.level = Logger::INFO
         end
 
-        @quotes = EventMachine::Channel.new
         @ready = false
         @joined_channels = []
         @heartbeat_timer = nil
@@ -94,11 +174,7 @@ module Intrinio
         debug "Leaving all channels"
         refresh_channels()
       end
-      
-      def on_quote(&b)
-        @quotes.subscribe(&b)
-      end
-      
+
       def connect
         raise "Must be run from within an EventMachine run loop" unless EM.reactor_running?
         return warn("Already connected!") if @ready
@@ -127,8 +203,76 @@ module Intrinio
         @ws.close() if @ws
         info "Connection closed"
       end
+
+      def on_trade(on_trade)
+        @on_trade = on_trade
+      end
+
+      def on_quote(on_quote)
+        @on_quote = on_quote
+      end
       
       private
+
+      def parse_uint64(*data)
+        data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('Q<').first
+      end
+
+      def parse_int32(*data)
+        data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('l<').first
+      end
+
+      def parse_uint32(*data)
+        data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('V').first
+      end
+
+      def parse_trade(data, start_index, symbol_length)
+        symbol = data[start_index + 2, symbol_length].map!{|c| c.chr}.join
+        price = parse_int32(data[start_index + 2 + symbol_length, 4]).to_f / 10000.0
+        size = parse_uint32(data[start_index + 6 + symbol_length, 4])
+        timestamp = parse_uint64(data[start_index + 10 + symbol_length, 8])
+        total_volume = parse_uint32(data[start_index + 18 + symbol_length, 4])
+        return Trade.new(symbol, price, size, timestamp, total_volume)
+      end
+
+      def parse_quote(data, start_index, symbol_length, msg_type)
+        type = case when msg_type == 1 then ASK when msg_type == 2 then BID end
+        symbol = data[start_index + 2, symbol_length].map!{|c| c.chr}.join
+        price = parse_int32(data[start_index + 2 + symbol_length, 4]).to_f / 10000.0
+        size = parse_uint32(data[start_index + 6 + symbol_length, 4])
+        timestamp = parse_uint64(data[start_index + 10 + symbol_length, 8])
+        return Quote.new(type, symbol, price, size, timestamp)
+      end
+
+      def handle_message(data, start_index)
+        msg_type = data[start_index]
+        symbol_length = data[start_index + 1]
+        case msg_type
+        when 0 then
+          trade = parse_trade(data, start_index, symbol_length)
+          @on_trade.call(trade)
+          return start_index + 22 + symbol_length
+        when 1 || 2 then
+          quote = parse_quote(data, start_index, symbol_length, msg_type)
+          @on_quote.call(quote)
+          return start_index + 18 + symbol_length
+        end
+        return start_index
+      end
+
+      def handle_data
+        loop do
+          pop = @messages.deq
+          data = pop.unpack('C*')
+          start_index = 1
+          count = data[0]
+          # These are grouped (many) messages.
+          # The first byte tells us how many there are.
+          # From there, check the type and symbol length at index 0 of each chunk to know how many bytes each message has.
+          count.times {start_index = handle_message(data, start_index)}
+          puts "Message processed."
+        end
+      end
       
       def refresh_token
         @token = nil
@@ -150,10 +294,8 @@ module Intrinio
         url = ""
 
         case @provider 
-        when IEX then url = "https://realtime.intrinio.com/auth"
-        when QUODD then url = "https://api.intrinio.com/token?type=QUODD"
-        when CRYPTOQUOTE then url = "https://crypto.intrinio.com/auth"
-        when FXCM then url = "https://fxcm.intrinio.com/auth"
+        when REALTIME then url = "https://realtime-mx.intrinio.com/auth"
+		    when MANUAL then url = "http://" + @ip_address + "/auth"
         end
 
         url = api_auth_url(url) if @api_key
@@ -172,11 +314,9 @@ module Intrinio
       end
 
       def socket_url 
-        case @provider 
-        when IEX then URI.escape("wss://realtime.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
-        when QUODD then URI.escape("wss://www5.quodd.com/websocket/webStreamer/intrinio/#{@token}")
-        when CRYPTOQUOTE then URI.escape("wss://crypto.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
-        when FXCM then URI.escape("wss://fxcm.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
+        case @provider
+		    when REALTIME then URI.escape("wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
+		    when MANUAL then URI.escape("ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}")
         end
       end
 
@@ -193,7 +333,7 @@ module Intrinio
         ws.on :open do
           me.send :info, "Connection established"
           me.send :ready, true
-          if [IEX, CRYPTOQUOTE, FXCM].include?(me.send(:provider))
+          if [REALTIME, MANUAL].include?(me.send(:provider))
             me.send :refresh_channels
           end
           me.send :start_heartbeat
@@ -201,43 +341,14 @@ module Intrinio
         end
 
         ws.on :message do |frame|
-          message = frame.data
-          me.send :debug, "Message: #{message}"
-          
+          data_message = frame.data
+          #me.send :debug, "Message: #{data_message}"
           begin
-            json = JSON.parse(message)
-
-            if json["event"] == "phx_reply" && json["payload"]["status"] == "error"
-              me.send :error, json["payload"]["response"]
-            end
-
-            quote =
-              case me.send(:provider)
-              when IEX
-                if json["event"] == "quote"
-                  json["payload"]
-                end
-              when QUODD
-                if json["event"] == "info" && json["data"]["message"] == "Connected"
-                  me.send :refresh_channels
-                elsif json["event"] == "quote" || json["event"] == "trade"
-                  json["data"]
-                end
-              when CRYPTOQUOTE
-                if json["event"] == "book_update" || json["event"] == "ticker" || json["event"] == "trade"
-                  json["payload"]
-                end
-              when FXCM
-                if json["event"] == "price_update"
-                  json["payload"]
-                end
-              end
-            
-            if quote && quote.is_a?(Hash)
-              me.send :process_quote, quote
+            if !data_message.nil?
+              @messages.enq(data_message)
             end
           rescue StandardError => e
-            me.send :error, "Could not parse message: #{message} #{e}"
+            me.send :error, "Error adding message to queue: #{data_message} #{e}"
           end
         end
         
@@ -261,16 +372,20 @@ module Intrinio
         # Join new channels
         new_channels = @channels - @joined_channels
         new_channels.each do |channel|
-          msg = join_message(channel)
-          @ws.send(msg.to_json)
+          #msg = join_message(channel)
+          #@ws.send(msg.to_json)
+          msg = join_binary_message(channel)
+          @ws.send(msg)
           info "Joined #{channel}"
         end
         
         # Leave old channels
         old_channels = @joined_channels - @channels
         old_channels.each do |channel|
-          msg = leave_message(channel)
-          @ws.send(msg.to_json)
+          #msg = leave__message(channel)
+          #@ws.send(msg.to_json)
+          msg = leave_binary_message(channel)
+          @ws.send(msg)
           info "Left #{channel}"
         end
         
@@ -290,11 +405,11 @@ module Intrinio
       end
       
       def heartbeat_msg
-        case @provider 
-        when IEX then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
-        when QUODD then {event: 'heartbeat', data: {action: 'heartbeat', ticker: (Time.now.to_f * 1000).to_i}}.to_json
-        when CRYPTOQUOTE, FXCM then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
-        end
+        #case @provider
+        #when REALTIME then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+        #when MANUAL then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
+        #end
+        []
       end
       
       def stop_heartbeat
@@ -324,11 +439,7 @@ module Intrinio
       def ready(val)
         @ready = val
       end
-      
-      def process_quote(quote)
-        @quotes.push(quote)
-      end
-      
+
       def debug(message)
         message = "IntrinioRealtime | #{message}"
         @logger.debug(message) rescue
@@ -362,68 +473,24 @@ module Intrinio
         channels
       end
       
-      def parse_iex_topic(channel)
-        case channel
-        when "$lobby"
-          "iex:lobby"
-        when "$lobby_last_price"
-          "iex:lobby:last_price"
+      def join_binary_message(channel)
+        if channel == "lobby"
+          return [74, 0, 36, 70, 73, 82, 69, 72, 79, 83, 69].pack('C*') #74, not trades only, "$FIREHOSE"
         else
-          "iex:securities:#{channel}"
+          bytes = [74, 0]
+          if (@trades_only)
+            bytes[1] = 1
+          end
+          return bytes.concat(channel.bytes).pack('C*')
         end
       end
-      
-      def join_message(channel)
-        case @provider 
-        when IEX
-          {
-            topic: parse_iex_topic(channel),
-            event: "phx_join",
-            payload: {},
-            ref: nil
-          }
-        when QUODD
-          {
-            event: "subscribe",
-            data: {
-              ticker: channel,
-              action: "subscribe"
-            }
-          }
-        when CRYPTOQUOTE, FXCM
-          {
-            topic: channel,
-            event: "phx_join",
-            payload: {},
-            ref: nil
-          }
-        end
-      end
-      
-      def leave_message(channel)
-        case @provider 
-        when IEX
-          {
-            topic: parse_iex_topic(channel),
-            event: "phx_leave",
-            payload: {},
-            ref: nil
-          }
-        when QUODD
-          {
-            event: "unsubscribe",
-            data: {
-              ticker: channel,
-              action: "unsubscribe"
-            }
-          }
-        when CRYPTOQUOTE, FXCM
-          {
-            topic: channel,
-            event: "phx_leave",
-            payload: {},
-            ref: nil
-          }
+
+      def leave_binary_message(channel)
+        if channel == "lobby"
+          return [76, 36, 70, 73, 82, 69, 72, 79, 83, 69].pack('C*') #74, not trades only, "$FIREHOSE"
+        else
+          bytes = [76]
+          return bytes.concat(channel.bytes).pack('C*')
         end
       end
 

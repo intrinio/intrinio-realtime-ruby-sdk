@@ -6,7 +6,7 @@ require 'thread/pool'
 require 'eventmachine'
 
 # Provide your Intrinio API access keys (found in https://intrinio.com/account)
-api_key = "YOUR_INTRINIO_API_KEY"
+api_key = "OjU3ZTM4YTFjMWMzOGQ0ZjRjYTI1YWQxMDUzMzE1ZWJj"
 
 # Setup a logger
 logger = Logger.new($stdout)

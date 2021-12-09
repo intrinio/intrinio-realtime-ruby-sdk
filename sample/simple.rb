@@ -5,7 +5,7 @@ require 'intrinio-realtime'
 require 'thread/pool'
 
 # Provide your Intrinio API access keys (found in https://intrinio.com/account)
-api_key = "YOUR_INTRINIO_API_KEY"
+api_key = "OjU3ZTM4YTFjMWMzOGQ0ZjRjYTI1YWQxMDUzMzE1ZWJj"
 
 # Setup a logger
 logger = Logger.new($stdout)
@@ -14,19 +14,15 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::IEX,
+  provider: Intrinio::Realtime::REALTIME,
   channels: ["MSFT","AAPL","GE"],
-  logger: logger
+  logger: logger,
+  threads: 4
 }
 
-# Setup a pool of 50 threads to handle quotes
-pool = Thread.pool(50)
+on_trade = -> (trade) {logger.info "TRADE! #{trade}"}
+
+on_quote = -> (quote) {logger.info "QUOTE! #{quote}"}
 
 # Start listening for quotes
-Intrinio::Realtime.connect(options) do |quote|
-  # Process quote in next available thread
-  pool.process do
-    logger.info "QUOTE! #{quote}"
-    sleep 0.100 # simulate 100ms for I/O operation
-  end
-end
+Intrinio::Realtime.connect(options, on_trade, on_quote)
