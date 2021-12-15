@@ -1,6 +1,7 @@
 require 'logger'
 require 'uri'
-require 'http'
+#require 'http'
+require 'net/http'
 require 'eventmachine'
 require 'websocket-client-simple'
 
@@ -320,14 +321,20 @@ module Intrinio
       def refresh_token
         @token = nil
 
-        if @api_key
-          response = HTTP.get(auth_url)
-        else
-          response = HTTP.basic_auth(:user => @username, :pass => @password).get(auth_url)
+        uri = URI.parse(auth_url)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.start
+        request = Net::HTTP::Get.new(uri.request_uri)
+        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv3.1")
+
+        unless @api_key
+          request.basic_auth(@username, @password)
         end
 
-        return fatal("Unable to authorize") if response.status == 401
-        return fatal("Could not get auth token") if response.status != 200
+        response = http.request(request)
+
+        return fatal("Unable to authorize") if response.code == "401"
+        return fatal("Could not get auth token") if response.code != "200"
 
         @token = response.body
         debug "Token refreshed"
@@ -461,11 +468,7 @@ module Intrinio
       end
       
       def heartbeat_msg
-        #case @provider
-        #when REALTIME then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
-        #when MANUAL then {topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nil}.to_json
-        #end
-        []
+        ""
       end
       
       def stop_heartbeat

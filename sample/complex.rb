@@ -17,6 +17,7 @@ options = {
   api_key: api_key,
   provider: Intrinio::Realtime::REALTIME,
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
+  #channels: ["lobby"],
   logger: logger,
   threads: 4,
   trades_only: false
