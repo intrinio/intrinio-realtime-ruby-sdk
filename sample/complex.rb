@@ -15,27 +15,20 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::IEX,
-  channels: ["AAPL","GE","MSFT"],
-  logger: logger
+  provider: Intrinio::Realtime::REALTIME,
+  channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
+  #channels: ["lobby"],
+  logger: logger,
+  threads: 4,
+  trades_only: false
 }
 
-# Setup a pool of 50 threads to handle quotes
-pool = Thread.pool(50)
+on_trade = -> (trade) {logger.info "TRADE! #{trade}"}
+on_quote = -> (quote) {logger.info "QUOTE! #{quote}"}
 
-# Run your code in an EventMachine environment for event-driven, continuous execution
 EventMachine.run do
   # Create a client
-  ir = Intrinio::Realtime::Client.new(options)
-  
-  # Handle quotes
-  ir.on_quote do |quote|
-    # Process quote in next available thread
-    pool.process do
-      logger.info "QUOTE! #{quote}"
-      sleep 0.100 # simulate 100ms for I/O operation
-    end
-  end
+  ir = Intrinio::Realtime::Client.new(options, on_trade, on_quote)
   
   # Start listening
   ir.connect()

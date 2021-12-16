@@ -1,46 +1,33 @@
 PATH
   remote: .
   specs:
-    intrinio-realtime (2.0.0)
+    intrinio-realtime (3.1.0)
+      bigdecimal (~> 1.4.0)
       eventmachine (~> 1.2)
-      http (~> 2.2)
+      thread (~> 0.2.2)
       websocket-client-simple (~> 0.3)
 
 GEM
   remote: https://rubygems.org/
   specs:
-    addressable (2.5.2)
-      public_suffix (>= 2.0.2, < 4.0)
-    domain_name (0.5.20180417)
-      unf (>= 0.0.5, < 1.0.0)
+    bigdecimal (1.4.4)
     event_emitter (0.2.6)
-    eventmachine (1.2.7)
-    http (2.2.2)
-      addressable (~> 2.3)
-      http-cookie (~> 1.0)
-      http-form_data (~> 1.0.1)
-      http_parser.rb (~> 0.6.0)
-    http-cookie (1.0.3)
-      domain_name (~> 0.5)
-    http-form_data (1.0.3)
-    http_parser.rb (0.6.0)
-    public_suffix (3.0.3)
-    unf (0.1.4)
-      unf_ext
-    unf_ext (0.0.7.5)
-    websocket (1.2.8)
+    eventmachine (1.2.7-x64-mingw32)
+    thread (0.2.2)
+    websocket (1.2.9)
     websocket-client-simple (0.3.0)
       event_emitter
       websocket
 
 PLATFORMS
   ruby
+  x64-mingw32
 
 DEPENDENCIES
   intrinio-realtime!
 
 RUBY VERSION
-   ruby 2.3.6p384
+   ruby 2.7.5p203
 
 BUNDLED WITH
-   1.17.1
+   2.1.4
