@@ -162,7 +162,7 @@ client.connect()
 ---------
 
 `client.join(...channels)` - Joins the given channels. This can be called at any time. The client will automatically register joined channels and establish the proper subscriptions with the WebSocket connection.
-* **Parameter** `channels` - An argument list or array of channels to join. 
+* **Parameter** `channels` - An argument list or array of channels to join. You can also use the special symbol, "$lobby" to join the firehose channel and recieved updates for all ticker symbols. You must have a valid "firehose" subscription.
 ```ruby
 client.join("AAPL", "MSFT", "GE")
 client.join(["GOOG", "VG"])
