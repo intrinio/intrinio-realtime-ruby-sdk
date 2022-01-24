@@ -317,12 +317,13 @@ module Intrinio
           end
         end
       end
-      
+
       def refresh_token
         @token = nil
 
         uri = URI.parse(auth_url)
         http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = true if (auth_url.include?("https"))
         http.start
         request = Net::HTTP::Get.new(uri.request_uri)
         request.add_field("Client-Information", "IntrinioRealtimeRubySDKv3.1")
