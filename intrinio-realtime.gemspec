@@ -3,9 +3,9 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 Gem::Specification.new do |spec|
   spec.name          = "intrinio-realtime"
-  spec.version       = "3.2"
+  spec.version       = "4.0.0"
   spec.authors       = ["Intrinio"]
-  spec.email         = ["ssnyder@intrinio.com"]
+  spec.email         = ["admin@intrinio.com"]
   spec.description   = %q{Intrinio Ruby SDK for Real-Time Stock Prices}
   spec.summary       = %q{Intrinio provides real-time stock prices from its Multi-Exchange feed, via a two-way WebSocket connection.}
   spec.homepage      = "https://github.com/intrinio/intrinio-realtime-ruby-sdk"
