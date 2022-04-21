@@ -251,9 +251,13 @@ module Intrinio
         data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('V').first
       end
 
+      def parse_float32(data)
+        data.map { |i| [sprintf('%02x',i)].pack('H2') }.join.unpack('e').first
+      end
+
       def parse_trade(data, start_index, symbol_length)
         symbol = data[start_index + 2, symbol_length].map!{|c| c.chr}.join
-        price = parse_int32(data[start_index + 2 + symbol_length, 4]).to_f / 10000.0
+        price = parse_float32(data[start_index + 2 + symbol_length, 4])
         size = parse_uint32(data[start_index + 6 + symbol_length, 4])
         timestamp = parse_uint64(data[start_index + 10 + symbol_length, 8])
         total_volume = parse_uint32(data[start_index + 18 + symbol_length, 4])
@@ -263,7 +267,7 @@ module Intrinio
       def parse_quote(data, start_index, symbol_length, msg_type)
         type = case when msg_type == 1 then ASK when msg_type == 2 then BID end
         symbol = data[start_index + 2, symbol_length].map!{|c| c.chr}.join
-        price = parse_int32(data[start_index + 2 + symbol_length, 4]).to_f / 10000.0
+        price = parse_float32(data[start_index + 2 + symbol_length, 4])
         size = parse_uint32(data[start_index + 6 + symbol_length, 4])
         timestamp = parse_uint64(data[start_index + 10 + symbol_length, 8])
         return Quote.new(type, symbol, price, size, timestamp)
@@ -326,7 +330,7 @@ module Intrinio
         http.use_ssl = true if (auth_url.include?("https"))
         http.start
         request = Net::HTTP::Get.new(uri.request_uri)
-        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv3.1")
+        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv3.2")
 
         unless @api_key
           request.basic_auth(@username, @password)
@@ -366,8 +370,8 @@ module Intrinio
 
       def socket_url 
         case @provider
-		    when REALTIME then URI.escape("wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}")
-		    when MANUAL then URI.escape("ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}")
+		    when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
+		    when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}"
         end
       end
 
