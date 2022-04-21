@@ -330,7 +330,7 @@ module Intrinio
         http.use_ssl = true if (auth_url.include?("https"))
         http.start
         request = Net::HTTP::Get.new(uri.request_uri)
-        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv3.2")
+        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv4.0")
 
         unless @api_key
           request.basic_auth(@username, @password)
