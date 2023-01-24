@@ -11,7 +11,8 @@ module Intrinio
     SELF_HEAL_BACKOFFS = [0, 100, 500, 1000, 2000, 5000].freeze
     REALTIME = "REALTIME".freeze
     MANUAL = "MANUAL".freeze
-    PROVIDERS = [REALTIME, MANUAL].freeze
+    DELAYED_SIP = "DELAYED_SIP".freeze
+    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP].freeze
     ASK = "Ask".freeze
     BID = "Bid".freeze
 
@@ -350,6 +351,7 @@ module Intrinio
 
         case @provider 
         when REALTIME then url = "https://realtime-mx.intrinio.com/auth"
+        when DELAYED_SIP then url = "https://realtime-delayed-sip.intrinio.com/auth"
 		    when MANUAL then url = "http://" + @ip_address + "/auth"
         end
 
@@ -370,7 +372,8 @@ module Intrinio
 
       def socket_url 
         case @provider
-		    when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
+        when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
+        when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
 		    when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}"
         end
       end
