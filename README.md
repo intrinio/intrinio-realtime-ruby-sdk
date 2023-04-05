@@ -10,6 +10,13 @@ SDK for working with Intrinio's realtime Multi-Exchange prices feed.  Intrinioâ€
 
 - Ruby 2.7.5
 
+## Docker
+Add your API key to the simple.rb file, then
+```
+docker compose build
+docker compose run client
+```
+
 ## Features
 
 * Receive streaming, real-time price quotes (last trade, bid, ask)
