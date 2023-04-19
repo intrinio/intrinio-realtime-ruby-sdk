@@ -47,7 +47,7 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::REALTIME,
+  provider: Intrinio::Realtime::REALTIME, # REALTIME, DELAYED_SIP, NASDAQ_BASIC, or MANUAL
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
   threads: 4,
@@ -123,7 +123,7 @@ You will receive your Intrinio API Key after [creating an account](https://intri
 
 `Intrinio::Realtime.connect(options, on_trade, on_quote)` - Connects to the Intrinio Realtime feed and provides quotes to the given lambdas.
 * **Parameter** `options.api_key`: Your Intrinio API Key
-* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::REALTIME`)
+* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::REALTIME` or DELAYED_SIP, NASDAQ_BASIC, MANUAL)
 * **Parameter** `options.channels`: (optional) An array of channels to join after connecting
 * **Parameter** `options.logger`: (optional) A Ruby logger to use for logging
 * **Parameter** `options.threads`: The quantity of threads used for processing market events.
@@ -138,7 +138,7 @@ Intrinio::Realtime.connect(options, on_trade, on_quote)
 
 `Intrinio::Realtime::Client.new(options, on_trade, on_quote)` - Creates a new instance of the Intrinio Realtime Client.
 * **Parameter** `options.api_key`: Your Intrinio API Key
-* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::REALTIME`)
+* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::REALTIME` or DELAYED_SIP, NASDAQ_BASIC, MANUAL)
 * **Parameter** `options.channels`: (optional) An array of channels to join after connecting
 * **Parameter** `options.logger`: (optional) A Ruby logger to use for logging
 * **Parameter** `options.threads`: The quantity of threads used for processing market events.
@@ -148,7 +148,7 @@ Intrinio::Realtime.connect(options, on_trade, on_quote)
 ```ruby
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::REALTIME,
+  provider: Intrinio::Realtime::REALTIME, # REALTIME, DELAYED_SIP, NASDAQ_BASIC, or MANUAL
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
   threads: 4,
