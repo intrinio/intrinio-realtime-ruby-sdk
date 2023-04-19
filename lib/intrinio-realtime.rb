@@ -12,7 +12,8 @@ module Intrinio
     REALTIME = "REALTIME".freeze
     MANUAL = "MANUAL".freeze
     DELAYED_SIP = "DELAYED_SIP".freeze
-    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP].freeze
+    NASDAQ_BASIC = "NASDAQ_BASIC".freeze
+    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP, NASDAQ_BASIC].freeze
     ASK = "Ask".freeze
     BID = "Bid".freeze
 
@@ -331,7 +332,7 @@ module Intrinio
         http.use_ssl = true if (auth_url.include?("https"))
         http.start
         request = Net::HTTP::Get.new(uri.request_uri)
-        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv4.1")
+        request.add_field("Client-Information", "IntrinioRealtimeRubySDKv4.2")
 
         unless @api_key
           request.basic_auth(@username, @password)
@@ -352,6 +353,7 @@ module Intrinio
         case @provider 
         when REALTIME then url = "https://realtime-mx.intrinio.com/auth"
         when DELAYED_SIP then url = "https://realtime-delayed-sip.intrinio.com/auth"
+        when NASDAQ_BASIC then url = "https://realtime-nasdaq-basic.intrinio.com/auth"
 		    when MANUAL then url = "http://" + @ip_address + "/auth"
         end
 
@@ -374,6 +376,7 @@ module Intrinio
         case @provider
         when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
         when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
+        when NASDAQ_BASIC then "wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
 		    when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}"
         end
       end
