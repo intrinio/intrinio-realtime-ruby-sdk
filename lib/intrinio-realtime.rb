@@ -7,7 +7,6 @@ require 'websocket-client-simple'
 
 module Intrinio
   module Realtime
-    HEARTBEAT_TIME = 3
     SELF_HEAL_BACKOFFS = [0, 100, 500, 1000, 2000, 5000].freeze
     REALTIME = "REALTIME".freeze
     MANUAL = "MANUAL".freeze
@@ -189,7 +188,6 @@ module Intrinio
 
         @ready = false
         @joined_channels = []
-        @heartbeat_timer = nil
         @selfheal_timer = nil
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
         @ws = nil
@@ -247,7 +245,6 @@ module Intrinio
       end
       
       def disconnect
-        EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
         @ready = false
         @closing = true
@@ -337,7 +334,6 @@ module Intrinio
       def parse_quote(data, start_index, msg_type)
         symbol_length = data[start_index + 2]
         condition_length = data[start_index + 22 + symbol_length]
-
         type = case when msg_type == 1 then ASK when msg_type == 2 then BID end
         symbol = data[start_index + 3, symbol_length].map!{|c| c.chr}.join
         price = parse_float32(data[start_index + 6 + symbol_length, 4])
@@ -346,6 +342,7 @@ module Intrinio
         subprovider = parse_subprovider(data[start_index + 3 + symbol_length])
         market_center = data[start_index + 4 + symbol_length, 2].map!{|c| c.chr}.join
         condition = if condition_length > 0 then data[start_index + 23 + symbol_length, condition_length].map!{|c| c.chr}.join else "" end
+
         return Quote.new(type, symbol, price, size, timestamp, subprovider, market_center, condition)
       end
 
@@ -548,7 +545,6 @@ module Intrinio
         time = @selfheal_backoffs.first
         @selfheal_backoffs.delete_at(0) if @selfheal_backoffs.count > 1
         
-        EM.cancel_timer(@heartbeat_timer) if @heartbeat_timer
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
         
         @selfheal_timer = EM.add_timer(time/1000) do
