@@ -325,7 +325,7 @@ module Intrinio
         timestamp = parse_uint64(data[start_index + 14 + symbol_length, 8])
         total_volume = parse_uint32(data[start_index + 22 + symbol_length, 4])
         subprovider = parse_subprovider(data[start_index + 3 + symbol_length])
-        market_center = data[start_index + 4 + symbol_length, 2].map!{|c| c.chr}.join
+        market_center = data[start_index + 4 + symbol_length, 2].pack("C*").encode!('UTF-8', 'UTF-16LE')
         condition = if condition_length > 0 then data[start_index + 27 + symbol_length, condition_length].map!{|c| c.chr}.join else "" end
 
         return Trade.new(symbol, price, size, timestamp, total_volume, subprovider, market_center, condition)
@@ -340,7 +340,7 @@ module Intrinio
         size = parse_uint32(data[start_index + 10 + symbol_length, 4])
         timestamp = parse_uint64(data[start_index + 14 + symbol_length, 8])
         subprovider = parse_subprovider(data[start_index + 3 + symbol_length])
-        market_center = data[start_index + 4 + symbol_length, 2].map!{|c| c.chr}.join
+        market_center = data[start_index + 4 + symbol_length, 2].pack("C*").encode!('UTF-8', 'UTF-16LE')
         condition = if condition_length > 0 then data[start_index + 23 + symbol_length, condition_length].map!{|c| c.chr}.join else "" end
 
         return Quote.new(type, symbol, price, size, timestamp, subprovider, market_center, condition)
@@ -359,7 +359,7 @@ module Intrinio
           @on_quote.call(quote)
           return start_index + msg_length
         end
-        return start_index
+        return start_index + msg_length
       end
 
       def handle_data
@@ -445,10 +445,10 @@ module Intrinio
 
       def socket_url 
         case @provider
-        when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
-        when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
-        when NASDAQ_BASIC then "wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}"
-		    when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}"
+        when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
+        when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
+        when NASDAQ_BASIC then "wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
+        when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
         end
       end
 
@@ -471,8 +471,13 @@ module Intrinio
         @threads = []
         @stop = false
         @thread_quantity.times {@threads << Thread.new{handle_data}}
-        
-        @ws = ws = WebSocket::Client::Simple.connect(socket_url)
+
+        headers = {}
+        headers[:headers] = {}
+        headers[CLIENT_INFO_HEADER_KEY] = CLIENT_INFO_HEADER_VALUE
+        headers[MESSAGE_VERSION_HEADER_KEY] = MESSAGE_VERSION_HEADER_VALUE
+        @ws = ws = WebSocket::Client::Simple.connect(socket_url, headers)
+
         me.send :info, "Connection opening"
 
         ws.on :open do
