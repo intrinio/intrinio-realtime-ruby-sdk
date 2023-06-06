@@ -155,7 +155,7 @@ module Intrinio
         unless @provider
           @provider = REALTIME
         end
-        raise "Provider must be 'REALTIME' or 'MANUAL'" unless PROVIDERS.include?(@provider)
+        raise "Provider must be 'REALTIME', 'DELAYED_SIP', 'NASDAQ_BASIC', or 'MANUAL'" unless PROVIDERS.include?(@provider)
 
         @ip_address = options[:ip_address]
         raise "Missing option ip_address while in MANUAL mode." if @provider == MANUAL and (@ip_address.nil? || @ip_address.empty?)
@@ -483,7 +483,7 @@ module Intrinio
         ws.on :open do
           me.send :info, "Connection established"
           me.send :ready, true
-          if [REALTIME, MANUAL].include?(me.send(:provider))
+          if PROVIDERS.include?(me.send(:provider))
             me.send :refresh_channels
           end
           me.send :stop_self_heal
