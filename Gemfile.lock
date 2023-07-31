@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     intrinio-realtime (5.0.0)
-      bigdecimal (~> 1.4.0)
+      bigdecimal (~> 2.0.0)
       eventmachine (~> 1.2)
       thread (~> 0.2.2)
       websocket-client-simple (~> 0.3)
@@ -10,12 +10,13 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
-    bigdecimal (1.4.4)
+    bigdecimal (2.0.3)
     event_emitter (0.2.6)
+    eventmachine (1.2.7)
     eventmachine (1.2.7-x64-mingw32)
     thread (0.2.2)
     websocket (1.2.9)
-    websocket-client-simple (0.3.0)
+    websocket-client-simple (0.6.1)
       event_emitter
       websocket
 
