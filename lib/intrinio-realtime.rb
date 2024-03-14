@@ -78,6 +78,10 @@ module Intrinio
         @condition
       end
 
+      def is_darkpool
+        @market_center == nil || @market_center == 'D' || @market_center == 'E' || @market_center == "\0" || @market_center.empty?
+      end
+
       def to_s
         [@symbol, @price, @size, @timestamp, @total_volume, @subprovider, @market_center, @condition].join(",")
       end
