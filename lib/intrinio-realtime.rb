@@ -79,7 +79,14 @@ module Intrinio
       end
 
       def is_darkpool
-        @market_center == nil || @market_center == 'D' || @market_center == 'E' || @market_center == "\0" || @market_center.empty?
+        case @subprovider
+        when CTA_A, CTA_B, UTP, OTC
+          @market_center == nil || @market_center == 'D' || @market_center == 'E' || @market_center == "\0" || @market_center.empty?
+        when NASDAQ_BASIC
+          @market_center == nil || @market_center == 'L' || @market_center == '2' || @market_center == "\0" || @market_center.empty?
+        else
+          false
+        end
       end
 
       def to_s
