@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    intrinio-realtime (5.1.0)
+    intrinio-realtime (5.2.0)
       bigdecimal (~> 1.4.0)
       eventmachine (~> 1.2)
       thread (~> 0.2.2)

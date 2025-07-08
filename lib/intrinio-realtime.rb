@@ -18,12 +18,13 @@ module Intrinio
     UTP = "UTP".freeze
     OTC = "OTC".freeze
     IEX = "IEX".freeze
-    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP, NASDAQ_BASIC].freeze
-    SUBPROVIDERS = [NO_SUBPROVIDER, CTA_A, CTA_B, UTP, OTC, NASDAQ_BASIC, IEX].freeze
+    CBOE_ONE = "CBOE_ONE".freeze
+    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP, NASDAQ_BASIC, IEX, CBOE_ONE].freeze
+    SUBPROVIDERS = [NO_SUBPROVIDER, CTA_A, CTA_B, UTP, OTC, NASDAQ_BASIC, IEX, CBOE_ONE].freeze
     ASK = "Ask".freeze
     BID = "Bid".freeze
     CLIENT_INFO_HEADER_KEY = "Client-Information".freeze
-    CLIENT_INFO_HEADER_VALUE = "IntrinioRealtimeRubySDKv5.0".freeze
+    CLIENT_INFO_HEADER_VALUE = "IntrinioRealtimeRubySDKv5.2".freeze
     MESSAGE_VERSION_HEADER_KEY = "UseNewEquitiesFormat".freeze
     MESSAGE_VERSION_HEADER_VALUE = "v2".freeze
 
