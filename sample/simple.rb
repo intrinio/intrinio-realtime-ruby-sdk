@@ -15,12 +15,13 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::REALTIME,
+  provider: Intrinio::Realtime::IEX, # or NASDAQ_BASIC, or CBOE_ONE, or DELAYED_SIP, or MANUAL
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   #channels: ["lobby"],
   logger: logger,
   threads: 4,
-  trades_only: false
+  trades_only: false,
+  delayed: false # set to true if you have realtime access and want to force 15 minute delayed.
 }
 
 on_trade = -> (trade) {logger.info "TRADE! #{trade}"}

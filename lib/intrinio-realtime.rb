@@ -167,7 +167,7 @@ module Intrinio
         unless @provider
           @provider = REALTIME
         end
-        raise "Provider must be 'REALTIME', 'DELAYED_SIP', 'NASDAQ_BASIC', or 'MANUAL'" unless PROVIDERS.include?(@provider)
+        raise "Provider must be 'IEX', 'REALTIME', 'DELAYED_SIP', 'NASDAQ_BASIC', 'CBOE_ONE', or 'MANUAL'" unless PROVIDERS.include?(@provider)
 
         @ip_address = options[:ip_address]
         raise "Missing option ip_address while in MANUAL mode." if @provider == MANUAL and (@ip_address.nil? || @ip_address.empty?)
@@ -175,6 +175,11 @@ module Intrinio
         @trades_only = options[:trades_only]
         if @trades_only.nil?
           @trades_only = false
+        end
+
+        @delayed = options[:delayed]
+        if @delayed.nil?
+          @delayed = false
         end
 
         @thread_quantity = options[:threads]
@@ -323,6 +328,8 @@ module Intrinio
           NASDAQ_BASIC
         when 6
           IEX
+        when 7
+          CBOE_ONE
         else
           IEX
         end
@@ -383,7 +390,9 @@ module Intrinio
             pop = nil
             data = nil
             pop = @messages.deq
-            unless pop.nil?
+            if pop.nil? || pop.empty?
+              sleep(0.1)
+            else
               begin
                 data = pop.unpack('C*')
               rescue StandardError => ex
@@ -398,7 +407,6 @@ module Intrinio
               # From there, check the type and symbol length at index 0 of each chunk to know how many bytes each message has.
               count.times {start_index = handle_message(data, start_index)}
             end
-            if pop.nil? then sleep(0.1) end
           rescue StandardError => e
             me.send :error, "Error handling message from queue: #{e} #{pop} : #{data} ; count: #{count} ; start index: #{start_index}"
           rescue Exception => e
@@ -435,8 +443,10 @@ module Intrinio
 
         case @provider 
         when REALTIME then url = "https://realtime-mx.intrinio.com/auth"
+        when IEX then url = "https://realtime-mx.intrinio.com/auth"
         when DELAYED_SIP then url = "https://realtime-delayed-sip.intrinio.com/auth"
         when NASDAQ_BASIC then url = "https://realtime-nasdaq-basic.intrinio.com/auth"
+        when CBOE_ONE then url = "https://cboe-one.intrinio.com/auth"
 		    when MANUAL then url = "http://" + @ip_address + "/auth"
         end
 
@@ -455,12 +465,17 @@ module Intrinio
         "#{url}api_key=#{@api_key}"
       end
 
-      def socket_url 
+      def socket_url
+        delayed_part = @delayed ? "&delayed=true" : ""
+
         case @provider
-        when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
-        when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
-        when NASDAQ_BASIC then "wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
-        when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}"
+        when REALTIME then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        when IEX then "wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        when NASDAQ_BASIC then "wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        when CBOE_ONE then "wss://cboe-one.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        else raise "Unknown provider"
         end
       end
 

@@ -47,7 +47,7 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::REALTIME, # REALTIME, DELAYED_SIP, NASDAQ_BASIC, or MANUAL
+  provider: Intrinio::Realtime::IEX, # IEX, REALTIME (interchangable with IEX), DELAYED_SIP, NASDAQ_BASIC, CBOE_ONE, or MANUAL
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
   threads: 4,
@@ -148,7 +148,7 @@ Intrinio::Realtime.connect(options, on_trade, on_quote)
 ```ruby
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::REALTIME, # REALTIME, DELAYED_SIP, NASDAQ_BASIC, or MANUAL
+  provider: Intrinio::Realtime::IEX, # IEX, REALTIME (interchangable with IEX), DELAYED_SIP, NASDAQ_BASIC, CBOE_ONE, or MANUAL
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
   threads: 4,
