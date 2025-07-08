@@ -1,6 +1,6 @@
 # Intrinio Ruby SDK for Real-Time Multi-Exchange prices feed
 
-SDK for working with Intrinio's realtime Multi-Exchange prices feed.  Intrinio’s Multi-Exchange feed bridges the gap by merging real-time equity pricing from the IEX and MEMX exchanges. Get a comprehensive view with increased market volume and enjoy no exchange fees, no per-user requirements, no permissions or authorizations, and little to no paperwork.
+SDK for working with Intrinio's realtime IEX, delayed SIP, CBOE One, or NASDAQ Basic prices feeds.  Get a comprehensive view with increased market volume and enjoy minimized exchange and per user fees.
 
 [Intrinio](https://intrinio.com/) provides real-time stock prices via a two-way WebSocket connection. To get started, [subscribe to a real-time data feed](https://intrinio.com/real-time-multi-exchange) and follow the instructions below.
 
@@ -51,7 +51,8 @@ options = {
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
   threads: 4,
-  trades_only: false
+  trades_only: false,
+  delayed: false # set to true if you have realtime access and want to force 15 minute delayed mode.
 }
 
 on_trade = -> (trade) {logger.info "TRADE! #{trade}"}
@@ -111,6 +112,103 @@ end
 *   **price** - the price in USD
 *   **size** - the size of the `last` trade, or total volume of orders at the top-of-book `bid` or `ask` price
 *   **timestamp** - a Unix timestamp (nanoseconds since unix epoch)
+
+### Equities Trade Conditions
+
+| Value | Description                                       |
+|-------|---------------------------------------------------|
+| @     | Regular Sale                                      |
+| A     | Acquisition                                       |
+| B     | Bunched Trade                                     |
+| C     | Cash Sale                                         |
+| D     | Distribution                                      |
+| E     | Placeholder                                       |
+| F     | Intermarket Sweep                                 |
+| G     | Bunched Sold Trade                                |
+| H     | Priced Variation Trade                            |
+| I     | Odd Lot Trade                                     |
+| K     | Rule 155 Trade (AMEX)                             |
+| L     | Sold Last                                         |
+| M     | Market Center Official Close                      |
+| N     | Next Day                                          |
+| O     | Opening Prints                                    |
+| P     | Prior Reference Price                             |
+| Q     | Market Center Official Open                       |
+| R     | Seller                                            |
+| S     | Split Trade                                       |
+| T     | Form T                                            |
+| U     | Extended Trading Hours (Sold Out of Sequence)     |
+| V     | Contingent Trade                                  |
+| W     | Average Price Trade                               |
+| X     | Cross/Periodic Auction Trade                      |
+| Y     | Yellow Flag Regular Trade                         |
+| Z     | Sold (Out of Sequence)                            |
+| 1     | Stopped Stock (Regular Trade)                     |
+| 4     | Derivatively Priced                               |
+| 5     | Re-Opening Prints                                 |
+| 6     | Closing Prints                                    |
+| 7     | Qualified Contingent Trade (QCT)                  |
+| 8     | Placeholder for 611 Exempt                        |
+| 9     | Corrected Consolidated Close (Per Listing Market) |
+
+
+### Equities Trade Conditions (CBOE One)
+Trade conditions for CBOE One are represented as the integer representation of a bit flag.
+
+None                      = 0,
+UpdateHighLowConsolidated = 1,
+UpdateLastConsolidated    = 2,
+UpdateHighLowMarketCenter = 4,
+UpdateLastMarketCenter    = 8,
+UpdateVolumeConsolidated  = 16,
+OpenConsolidated          = 32,
+OpenMarketCenter          = 64,
+CloseConsolidated         = 128,
+CloseMarketCenter         = 256,
+UpdateVolumeMarketCenter  = 512
+
+
+### Equities Quote Conditions
+
+| Value | Description                                 |
+|-------|---------------------------------------------|
+| R     | Regular                                     |
+| A     | Slow on Ask                                 |
+| B     | Slow on Bid                                 |
+| C     | Closing                                     |
+| D     | News Dissemination                          |
+| E     | Slow on Bid (LRP or Gap Quote)              |
+| F     | Fast Trading                                |
+| G     | Trading Range Indication                    |
+| H     | Slow on Bid and Ask                         |
+| I     | Order Imbalance                             |
+| J     | Due to Related - News Dissemination         |
+| K     | Due to Related - News Pending               |
+| O     | Open                                        |
+| L     | Closed                                      |
+| M     | Volatility Trading Pause                    |
+| N     | Non-Firm Quote                              |
+| O     | Opening                                     |
+| P     | News Pending                                |
+| S     | Due to Related                              |
+| T     | Resume                                      |
+| U     | Slow on Bid and Ask (LRP or Gap Quote)      |
+| V     | In View of Common                           |
+| W     | Slow on Bid and Ask (Non-Firm)              |
+| X     | Equipment Changeover                        |
+| Y     | Sub-Penny Trading                           |
+| Z     | No Open / No Resume                         |
+| 1     | Market Wide Circuit Breaker Level 1         |
+| 2     | Market Wide Circuit Breaker Level 2         |        
+| 3     | Market Wide Circuit Breaker Level 3         |
+| 4     | On Demand Intraday Auction                  |        
+| 45    | Additional Information Required (CTS)       |      
+| 46    | Regulatory Concern (CTS)                    |     
+| 47    | Merger Effective                            |    
+| 49    | Corporate Action (CTS)                      |   
+| 50    | New Security Offering (CTS)                 |  
+| 51    | Intraday Indicative Value Unavailable (CTS) |
+
 ## Channels
 You may subscribe to a list of securities by subscribing to each individually, or subscribe to all available securities by subscribing to 'lobby'.  Lobby requires your account to have firehose connection permission enabled.
 
@@ -123,11 +221,12 @@ You will receive your Intrinio API Key after [creating an account](https://intri
 
 `Intrinio::Realtime.connect(options, on_trade, on_quote)` - Connects to the Intrinio Realtime feed and provides quotes to the given lambdas.
 * **Parameter** `options.api_key`: Your Intrinio API Key
-* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::REALTIME` or DELAYED_SIP, NASDAQ_BASIC, MANUAL)
+* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::IEX` or DELAYED_SIP, or CBOE_ONE, NASDAQ_BASIC, MANUAL)
 * **Parameter** `options.channels`: (optional) An array of channels to join after connecting
 * **Parameter** `options.logger`: (optional) A Ruby logger to use for logging
 * **Parameter** `options.threads`: The quantity of threads used for processing market events.
 * **Parameter** `options.trades_only`: True or False.  True indicates you only want trade events.  False indicates you want trade and quote (bid/ask) events.
+* **Parameter** `options.delayed`: set to true if you have realtime access and want to force 15 minute delayed mode. Has no effect outside of that scenario.
 * **Parameter** `on_trade`: The lambda to fire when a trade happens.  Accepts a trade object as input.
 * **Parameter** `on_quote`: The lambda to fire when a quote happens.  Accepts a quote object as input.
 ```ruby
@@ -138,11 +237,12 @@ Intrinio::Realtime.connect(options, on_trade, on_quote)
 
 `Intrinio::Realtime::Client.new(options, on_trade, on_quote)` - Creates a new instance of the Intrinio Realtime Client.
 * **Parameter** `options.api_key`: Your Intrinio API Key
-* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::REALTIME` or DELAYED_SIP, NASDAQ_BASIC, MANUAL)
+* **Parameter** `options.provider`: The real-time data provider to use (`Intrinio::Realtime::IEX` or DELAYED_SIP, CBOE_ONE, NASDAQ_BASIC, MANUAL)
 * **Parameter** `options.channels`: (optional) An array of channels to join after connecting
 * **Parameter** `options.logger`: (optional) A Ruby logger to use for logging
 * **Parameter** `options.threads`: The quantity of threads used for processing market events.
 * **Parameter** `options.trades_only`: True or False.  True indicates you only want trade events.  False indicates you want trade and quote (bid/ask) events.
+* **Parameter** `options.delayed`: set to true if you have realtime access and want to force 15 minute delayed mode. Has no effect outside of that scenario.
 * **Parameter** `on_trade`: The lambda to fire when a trade happens.  Accepts a trade object as input.
 * **Parameter** `on_quote`: The lambda to fire when a quote happens.  Accepts a quote object as input.
 ```ruby
@@ -152,7 +252,8 @@ options = {
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   logger: logger,
   threads: 4,
-  trades_only: false
+  trades_only: false,
+  delayed: false # set to true if you have realtime access and want to force 15 minute delayed mode.
 }
 client = Intrinio::Realtime::Client.new(options, on_trade, on_quote)
 client.connect()
