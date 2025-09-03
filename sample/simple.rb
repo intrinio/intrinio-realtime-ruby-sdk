@@ -15,7 +15,7 @@ logger.level = Logger::INFO
 # Specify options
 options = {
   api_key: api_key,
-  provider: Intrinio::Realtime::IEX, # or NASDAQ_BASIC, or CBOE_ONE, or DELAYED_SIP, or MANUAL
+  provider: Intrinio::Realtime::IEX, # or NASDAQ_BASIC, or CBOE_ONE, or DELAYED_SIP, or EQUITIES_EDGE, or MANUAL
   channels: ["MSFT","AAPL","GE","GOOG","F","AMZN"],
   #channels: ["lobby"],
   logger: logger,
