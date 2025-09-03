@@ -19,12 +19,13 @@ module Intrinio
     OTC = "OTC".freeze
     IEX = "IEX".freeze
     CBOE_ONE = "CBOE_ONE".freeze
-    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP, NASDAQ_BASIC, IEX, CBOE_ONE].freeze
-    SUBPROVIDERS = [NO_SUBPROVIDER, CTA_A, CTA_B, UTP, OTC, NASDAQ_BASIC, IEX, CBOE_ONE].freeze
+    EQUITIES_EDGE = "EQUITIES_EDGE".freeze
+    PROVIDERS = [REALTIME, MANUAL, DELAYED_SIP, NASDAQ_BASIC, IEX, CBOE_ONE, EQUITIES_EDGE].freeze
+    SUBPROVIDERS = [NO_SUBPROVIDER, CTA_A, CTA_B, UTP, OTC, NASDAQ_BASIC, IEX, CBOE_ONE, EQUITIES_EDGE].freeze
     ASK = "Ask".freeze
     BID = "Bid".freeze
     CLIENT_INFO_HEADER_KEY = "Client-Information".freeze
-    CLIENT_INFO_HEADER_VALUE = "IntrinioRealtimeRubySDKv5.2".freeze
+    CLIENT_INFO_HEADER_VALUE = "IntrinioRealtimeRubySDKv5.3".freeze
     MESSAGE_VERSION_HEADER_KEY = "UseNewEquitiesFormat".freeze
     MESSAGE_VERSION_HEADER_VALUE = "v2".freeze
 
@@ -167,7 +168,7 @@ module Intrinio
         unless @provider
           @provider = REALTIME
         end
-        raise "Provider must be 'IEX', 'REALTIME', 'DELAYED_SIP', 'NASDAQ_BASIC', 'CBOE_ONE', or 'MANUAL'" unless PROVIDERS.include?(@provider)
+        raise "Provider must be 'IEX', 'REALTIME', 'DELAYED_SIP', 'NASDAQ_BASIC', 'CBOE_ONE', or 'EQUITIES_EDGE', or 'MANUAL'" unless PROVIDERS.include?(@provider)
 
         @ip_address = options[:ip_address]
         raise "Missing option ip_address while in MANUAL mode." if @provider == MANUAL and (@ip_address.nil? || @ip_address.empty?)
@@ -330,6 +331,8 @@ module Intrinio
           IEX
         when 7
           CBOE_ONE
+        when 8
+          EQUITIES_EDGE
         else
           IEX
         end
@@ -447,6 +450,7 @@ module Intrinio
         when DELAYED_SIP then url = "https://realtime-delayed-sip.intrinio.com/auth"
         when NASDAQ_BASIC then url = "https://realtime-nasdaq-basic.intrinio.com/auth"
         when CBOE_ONE then url = "https://cboe-one.intrinio.com/auth"
+        when EQUITIES_EDGE then url = "https://equities-edge.intrinio.com/auth"
 		    when MANUAL then url = "http://" + @ip_address + "/auth"
         end
 
@@ -474,6 +478,7 @@ module Intrinio
         when DELAYED_SIP then "wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
         when NASDAQ_BASIC then "wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
         when CBOE_ONE then "wss://cboe-one.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
+        when EQUITIES_EDGE then "wss://equities-edge.intrinio.com/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
         when MANUAL then "ws://" + @ip_address + "/socket/websocket?vsn=1.0.0&token=#{@token}&#{CLIENT_INFO_HEADER_KEY}=#{CLIENT_INFO_HEADER_VALUE}&#{MESSAGE_VERSION_HEADER_KEY}=#{MESSAGE_VERSION_HEADER_VALUE}#{delayed_part}"
         else raise "Unknown provider"
         end
