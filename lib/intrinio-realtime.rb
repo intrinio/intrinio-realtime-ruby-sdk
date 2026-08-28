@@ -2,12 +2,14 @@ require 'logger'
 require 'uri'
 #require 'http'
 require 'net/http'
+require 'timeout'
 require 'eventmachine'
 require 'websocket-client-simple'
 
 module Intrinio
   module Realtime
     SELF_HEAL_BACKOFFS = [0, 100, 500, 1000, 2000, 5000].freeze
+    CONNECT_TIMEOUT_SECONDS = 30
     REALTIME = "REALTIME".freeze
     MANUAL = "MANUAL".freeze
     DELAYED_SIP = "DELAYED_SIP".freeze
@@ -207,7 +209,9 @@ module Intrinio
         @ready = false
         @joined_channels = []
         @selfheal_timer = nil
+        @connect_timer = nil
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
+        @refreshing_websocket = false
         @ws = nil
       end
 
@@ -264,6 +268,7 @@ module Intrinio
       
       def disconnect
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
+        cancel_connect_timer
         @ready = false
         @closing = true
         @channels = []
@@ -486,31 +491,75 @@ module Intrinio
 
       def refresh_websocket
         me = self
+        timed_out = false
 
-        @ws.close() unless @ws.nil?
-        @ready = false
-        @joined_channels = []
-
-        @stop = true
-        sleep(2)
-        @threads.each { |thread|
-          if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
-          then thread.join(7)
-          elsif !thread.nil?
-          then thread.kill
+        @refreshing_websocket = true
+        begin
+          cancel_connect_timer
+          begin
+            @ws.close() unless @ws.nil?
+          rescue
           end
-        }
-        @threads = []
-        @stop = false
-        @thread_quantity.times {@threads << Thread.new{handle_data}}
+          @ready = false
+          @joined_channels = []
 
-        headers = {}
-        headers[:headers] = {}
-        headers[CLIENT_INFO_HEADER_KEY] = CLIENT_INFO_HEADER_VALUE
-        headers[MESSAGE_VERSION_HEADER_KEY] = MESSAGE_VERSION_HEADER_VALUE
-        @ws = ws = WebSocket::Client::Simple.connect(socket_url, headers)
+          @stop = true
+          sleep(2)
+          @threads.each { |thread|
+            if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
+            then thread.join(7)
+            elsif !thread.nil?
+            then thread.kill
+            end
+          }
+          @threads = []
+          @stop = false
+          @thread_quantity.times {@threads << Thread.new{handle_data}}
+
+          headers = {}
+          headers[:headers] = {}
+          headers[CLIENT_INFO_HEADER_KEY] = CLIENT_INFO_HEADER_VALUE
+          headers[MESSAGE_VERSION_HEADER_KEY] = MESSAGE_VERSION_HEADER_VALUE
+
+          begin
+            Timeout.timeout(CONNECT_TIMEOUT_SECONDS) do
+              @ws = WebSocket::Client::Simple.connect(socket_url, headers)
+            end
+          rescue Timeout::Error
+            timed_out = true
+            error("Websocket connect timed out after #{CONNECT_TIMEOUT_SECONDS}s")
+            begin
+              @ws.close() if @ws
+            rescue
+            end
+          end
+        ensure
+          @refreshing_websocket = false
+        end
+
+        if timed_out
+          try_self_heal
+          return
+        end
+
+        ws = @ws
+        if ws.nil?
+          try_self_heal
+          return
+        end
 
         me.send :info, "Connection opening"
+
+        @connect_timer = EM.add_timer(CONNECT_TIMEOUT_SECONDS) do
+          unless me.send(:ready_state)
+            me.send :error, "Websocket connect timed out after #{CONNECT_TIMEOUT_SECONDS}s"
+            begin
+              me.instance_variable_get(:@ws).close() if me.instance_variable_get(:@ws)
+            rescue
+            end
+            me.send :try_self_heal
+          end
+        end
 
         ws.on :open do
           me.send :info, "Connection established"
@@ -577,21 +626,33 @@ module Intrinio
       
       def try_self_heal
         return if @closing
+        return if @refreshing_websocket
         debug "Attempting to self-heal"
+        cancel_connect_timer
         
         time = @selfheal_backoffs.first
         @selfheal_backoffs.delete_at(0) if @selfheal_backoffs.count > 1
         
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
         
-        @selfheal_timer = EM.add_timer(time/1000) do
-          connect()
+        @selfheal_timer = EM.add_timer(time/1000.0) do
+          connect() unless @closing
         end
       end
       
       def stop_self_heal
         EM.cancel_timer(@selfheal_timer) if @selfheal_timer
+        cancel_connect_timer
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
+      end
+
+      def cancel_connect_timer
+        EM.cancel_timer(@connect_timer) if @connect_timer
+        @connect_timer = nil
+      end
+
+      def ready_state
+        @ready
       end
       
       def ready(val)
