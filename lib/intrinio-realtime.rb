@@ -1,5 +1,6 @@
 require 'logger'
 require 'uri'
+require 'timeout'
 #require 'http'
 require 'net/http'
 require 'eventmachine'
@@ -25,9 +26,13 @@ module Intrinio
     ASK = "Ask".freeze
     BID = "Bid".freeze
     CLIENT_INFO_HEADER_KEY = "Client-Information".freeze
-    CLIENT_INFO_HEADER_VALUE = "IntrinioRealtimeRubySDKv5.3".freeze
+    CLIENT_INFO_HEADER_VALUE = "IntrinioRealtimeRubySDKv5.4".freeze
     MESSAGE_VERSION_HEADER_KEY = "UseNewEquitiesFormat".freeze
     MESSAGE_VERSION_HEADER_VALUE = "v2".freeze
+    CONNECT_TIMEOUT_SECONDS = 30
+    HTTP_TIMEOUT_SECONDS = 30
+    CLOSE_TIMEOUT_SECONDS = 5
+    WORKER_JOIN_TIMEOUT_SECONDS = 5
 
     def self.connect(options, on_trade, on_quote)
       EM.run do
@@ -150,8 +155,10 @@ module Intrinio
       def initialize(options, on_trade, on_quote)
         raise "Options parameter is required" if options.nil? || !options.is_a?(Hash)
         @stop = false
-        @messages = Queue.new
-        raise "Unable to create queue." if @messages.nil?
+        @trade_messages = Queue.new
+        @quote_messages = Queue.new
+        @message_available = Queue.new
+        @stop_message = Object.new
         @on_trade = on_trade
         @on_quote = on_quote
 
@@ -189,11 +196,14 @@ module Intrinio
         end
 
         @threads = []
+        @worker_generation = 0
+        @worker_mutex = Mutex.new
 
         @channels = []
         @channels = parse_channels(options[:channels]) if options[:channels]
         bad_channels = @channels.select{|x| !x.is_a?(String)}
         raise "Invalid channels to join: #{bad_channels}" unless bad_channels.empty?
+        @channels_mutex = Mutex.new
 
         if options[:logger] == false
           @logger = nil 
@@ -205,10 +215,19 @@ module Intrinio
         end
 
         @ready = false
+        @connecting = false
+        @closing = false
         @joined_channels = []
         @selfheal_timer = nil
+        @connect_timer = nil
         @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
         @ws = nil
+        @connection_generation = 0
+        @state_mutex = Mutex.new
+        @lifecycle_mutex = Mutex.new
+        @connect_timeout_seconds = CONNECT_TIMEOUT_SECONDS
+        @http_timeout_seconds = HTTP_TIMEOUT_SECONDS
+        @close_timeout_seconds = CLOSE_TIMEOUT_SECONDS
       end
 
       def provider
@@ -219,9 +238,11 @@ module Intrinio
         channels = parse_channels(channels)
         nonconforming = channels.select{|x| !x.is_a?(String)}
         return error("Invalid channels to join: #{nonconforming}") unless nonconforming.empty?
-        
-        @channels.concat(channels)
-        @channels.uniq!
+
+        @channels_mutex.synchronize do
+          @channels.concat(channels)
+          @channels.uniq!
+        end
         debug "Joining channels #{channels}"
         
         refresh_channels()
@@ -232,54 +253,78 @@ module Intrinio
         nonconforming = channels.find{|x| !x.is_a?(String)}
         return error("Invalid channels to leave: #{nonconforming}") unless nonconforming.empty?
         
-        channels.each{|c| @channels.delete(c)}
+        @channels_mutex.synchronize do
+          channels.each{|c| @channels.delete(c)}
+        end
         debug "Leaving channels #{channels}"
         
         refresh_channels()
       end
       
       def leave_all
-        @channels = []
+        @channels_mutex.synchronize {@channels = []}
         debug "Leaving all channels"
         refresh_channels()
       end
 
       def connect
         raise "Must be run from within an EventMachine run loop" unless EM.reactor_running?
-        return warn("Already connected!") if @ready
-        debug "Connecting..."
-        
-        catch :fatal do
-          begin
-            @closing = false
-            @ready = false
-            refresh_token()
-            refresh_websocket()
-          rescue StandardError => e
-            error("Connection error: #{e} \n#{e.backtrace.join("\n")}")
-            try_self_heal()
+
+        generation = nil
+        reconnect_timer = nil
+        already_connected = @lifecycle_mutex.synchronize do
+          connected = @state_mutex.synchronize do
+            if @ready || @connecting
+              true
+            else
+              @closing = false
+              @connecting = true
+              @connection_generation += 1
+              generation = @connection_generation
+              reconnect_timer = @selfheal_timer
+              @selfheal_timer = nil
+              false
+            end
           end
+          start_workers unless connected
+          connected
         end
+        return warn("Already connected!") if already_connected
+
+        cancel_timer(reconnect_timer)
+        debug "Connecting..."
+
+        EM.defer(
+          proc { refresh_token },
+          proc { |token| finish_authorization(generation, token) },
+          proc { |exception| connection_attempt_failed(generation, exception) }
+        )
       end
       
       def disconnect
-        EM.cancel_timer(@selfheal_timer) if @selfheal_timer
-        @ready = false
-        @closing = true
-        @channels = []
-        @joined_channels = []
-        @ws.close() if @ws
-        @stop = true
-        sleep(2)
-        @threads.each { |thread|
-          if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
-          then thread.join(7)
-          elsif !thread.nil?
-          then thread.kill
+        @lifecycle_mutex.synchronize do
+          socket = nil
+          reconnect_timer = nil
+          connect_timer = nil
+          @state_mutex.synchronize do
+            @closing = true
+            @ready = false
+            @connecting = false
+            @connection_generation += 1
+            socket = @ws
+            @ws = nil
+            reconnect_timer = @selfheal_timer
+            connect_timer = @connect_timer
+            @selfheal_timer = nil
+            @connect_timer = nil
           end
-        }
-        @threads = []
-        @stop = false
+          @channels_mutex.synchronize {@joined_channels = []}
+
+          cancel_timer(reconnect_timer)
+          cancel_timer(connect_timer)
+          close_websocket(socket, true)
+          stop_workers
+        end
         info "Connection closed"
       end
 
@@ -294,7 +339,37 @@ module Intrinio
       private
 
       def queue_message(message)
-        @messages.enq(message)
+        return if message.nil? || message.empty?
+
+        message_count = message.getbyte(0)
+        raise "Message does not contain an event count" if message_count.nil?
+
+        start_index = 1
+        trades = []
+        quotes = []
+        message_count.times do
+          raise "Message header is truncated at byte #{start_index}" if start_index + 2 > message.bytesize
+
+          message_type = message.getbyte(start_index)
+          message_length = message.getbyte(start_index + 1)
+          if message_length.nil? || message_length < 2 || start_index + message_length > message.bytesize
+            raise "Message body is truncated at byte #{start_index}"
+          end
+
+          chunk = message.byteslice(start_index, message_length)
+          if message_type == 0
+            trades << chunk
+          else
+            quotes << chunk
+          end
+          start_index += message_length
+        end
+
+        trades.each {|chunk| @trade_messages.enq(chunk)}
+        quotes.each {|chunk| @quote_messages.enq(chunk)}
+        (trades.length + quotes.length).times {@message_available.enq(true)}
+      rescue StandardError => e
+        error "Error adding message to queues: #{e}"
       end
 
       def parse_uint64(data)
@@ -376,7 +451,7 @@ module Intrinio
           trade = parse_trade(data, start_index)
           @on_trade.call(trade)
           return start_index + msg_length
-        when 1 || 2 then
+        when 1, 2 then
           quote = parse_quote(data, start_index, msg_type)
           @on_quote.call(quote)
           return start_index + msg_length
@@ -384,47 +459,38 @@ module Intrinio
         return start_index + msg_length
       end
 
-      def handle_data
-        Thread.current.priority -= 1
-        me = self
+      def handle_data(generation)
+        Thread.current.priority -= 1 rescue nil
         pop = nil
-        until @stop do
+        until @stop || generation != @worker_generation do
           begin
-            pop = nil
-            data = nil
-            pop = @messages.deq
-            if pop.nil? || pop.empty?
-              sleep(0.1)
-            else
-              begin
-                data = pop.unpack('C*')
-              rescue StandardError => ex
-                me.send :error, "Error unpacking data from queue: #{ex} #{pop}"
-                next
-              end
-              if !data then me.send :error, "Cannot process data.  Data is nil. #{pop}" end
-              start_index = 1
-              count = data[0]
-              # These are grouped (many) messages.
-              # The first byte tells us how many there are.
-              # From there, check the type and symbol length at index 0 of each chunk to know how many bytes each message has.
-              count.times {start_index = handle_message(data, start_index)}
-            end
+            signal = @message_available.deq
+            break if signal.equal?(@stop_message) || @stop || generation != @worker_generation
+
+            # Always drain a trade first. Quotes can be extremely high volume, so a
+            # shared FIFO lets them delay trades even when processing capacity is free.
+            pop = nonblocking_dequeue(@trade_messages)
+            pop = nonblocking_dequeue(@quote_messages) if pop.nil?
+            next if pop.nil?
+
+            data = pop.unpack('C*')
+            handle_message(data, 0)
           rescue StandardError => e
-            me.send :error, "Error handling message from queue: #{e} #{pop} : #{data} ; count: #{count} ; start index: #{start_index}"
+            error "Error handling message from queue: #{e} #{pop}"
           rescue Exception => e
-            #me.send :error, "General error handling message from queue: #{e} #{pop} : #{data} ; count: #{count} ; start index: #{start_index}"
+            break if @stop || generation != @worker_generation
+            error "General error handling message from queue: #{e} #{pop}"
           end
         end
       end
 
       def refresh_token
-        @token = nil
-
         uri = URI.parse(auth_url)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = true if (auth_url.include?("https"))
-        http.start
+        http.open_timeout = @http_timeout_seconds
+        http.read_timeout = @http_timeout_seconds
+        http.write_timeout = @http_timeout_seconds if http.respond_to?(:write_timeout=)
         request = Net::HTTP::Get.new(uri.request_uri)
         request.add_field(CLIENT_INFO_HEADER_KEY, CLIENT_INFO_HEADER_VALUE)
 
@@ -432,13 +498,13 @@ module Intrinio
           request.basic_auth(@username, @password)
         end
 
-        response = http.request(request)
+        response = http.start {|session| session.request(request)}
 
-        return fatal("Unable to authorize") if response.code == "401"
-        return fatal("Could not get auth token") if response.code != "200"
+        raise "Unable to authorize" if response.code == "401"
+        raise "Could not get auth token (HTTP #{response.code})" if response.code != "200"
 
-        @token = response.body
         debug "Token refreshed"
+        response.body
       end
       
       def auth_url 
@@ -484,118 +550,350 @@ module Intrinio
         end
       end
 
-      def refresh_websocket
-        me = self
-
-        @ws.close() unless @ws.nil?
-        @ready = false
-        @joined_channels = []
-
-        @stop = true
-        sleep(2)
-        @threads.each { |thread|
-          if !thread.nil? && (!thread.pending_interrupt? || thread.status == "run" || thread.status == "Sleeping")
-          then thread.join(7)
-          elsif !thread.nil?
-          then thread.kill
-          end
+      def refresh_websocket(generation)
+        headers = {
+          :headers => {
+            CLIENT_INFO_HEADER_KEY => CLIENT_INFO_HEADER_VALUE,
+            MESSAGE_VERSION_HEADER_KEY => MESSAGE_VERSION_HEADER_VALUE
+          }
         }
-        @threads = []
-        @stop = false
-        @thread_quantity.times {@threads << Thread.new{handle_data}}
 
-        headers = {}
-        headers[:headers] = {}
-        headers[CLIENT_INFO_HEADER_KEY] = CLIENT_INFO_HEADER_VALUE
-        headers[MESSAGE_VERSION_HEADER_KEY] = MESSAGE_VERSION_HEADER_VALUE
-        @ws = ws = WebSocket::Client::Simple.connect(socket_url, headers)
-
-        me.send :info, "Connection opening"
-
-        ws.on :open do
-          me.send :info, "Connection established"
-          me.send :ready, true
-          if PROVIDERS.include?(me.send(:provider))
-            me.send :refresh_channels
-          end
-          me.send :stop_self_heal
-        end
-
-        ws.on :message do |frame|
-          data_message = frame.data
-          #me.send :debug, "Message: #{data_message}"
-          begin
-            unless data_message.nil?
-            then me.send :queue_message, data_message
-            end
-          rescue StandardError => e
-            me.send :error, "Error adding message to queue: #{data_message} #{e}"
+        old_socket = @state_mutex.synchronize {@ws}
+        ws = open_websocket(socket_url, headers) do |socket|
+          install_websocket_handlers(socket, generation)
+          @state_mutex.synchronize do
+            @ws = socket if generation == @connection_generation && !@closing
           end
         end
-        
-        ws.on :close do |e|
-          me.send :ready, false
-          me.send :info, "Connection closing...: #{e}"
-          me.send :try_self_heal
+
+        unless current_connection?(generation, ws)
+          close_websocket(ws, false)
+          return
         end
 
-        ws.on :error do |e|
-          me.send :ready, false
-          me.send :error, "Connection error: #{e}"
-          me.send :try_self_heal
+        close_websocket(old_socket, false) if old_socket && !old_socket.equal?(ws)
+        schedule_connect_timeout(generation, ws)
+        info "Connection opening"
+      end
+
+      def open_websocket(url, headers, &block)
+        WebSocket::Client::Simple.connect(url, headers, &block)
+      end
+
+      def install_websocket_handlers(ws, generation)
+        # websocket-client-simple emits with instance_exec, so self inside a
+        # raw handler is the socket. Rebind before touching client methods.
+        bind_socket_event(ws, :open) do
+          schedule_on_reactor {websocket_opened(generation, ws)}
         end
+
+        bind_socket_event(ws, :message) do |frame|
+          next unless current_connection?(generation, ws)
+          if frame.respond_to?(:type) && frame.type != :binary
+            debug "Ignoring non-binary websocket message"
+            next
+          end
+          queue_message(frame.data) unless frame.data.nil?
+        end
+
+        bind_socket_event(ws, :close) do |exception|
+          schedule_on_reactor {websocket_closed(generation, ws, exception)}
+        end
+
+        bind_socket_event(ws, :error) do |exception|
+          schedule_on_reactor {websocket_errored(generation, ws, exception)}
+        end
+      end
+
+      def bind_socket_event(ws, event, &callback)
+        client = self
+        ws.on(event) do |*args|
+          client.instance_exec(*args, &callback)
+        end
+      end
+
+      def websocket_opened(generation, ws)
+        timer = nil
+        opened = @state_mutex.synchronize do
+          if generation == @connection_generation && @ws.equal?(ws) && !@closing
+            @ready = true
+            @connecting = false
+            timer = @connect_timer
+            @connect_timer = nil
+            true
+          else
+            false
+          end
+        end
+        return close_websocket(ws, false) unless opened
+
+        cancel_timer(timer)
+        @channels_mutex.synchronize {@joined_channels = []}
+        info "Connection established"
+
+        begin
+          channels_refreshed = !PROVIDERS.include?(provider) || refresh_channels
+          return unless channels_refreshed
+          stop_self_heal
+        rescue StandardError => e
+          connection_attempt_failed(generation, e, ws)
+        end
+      end
+
+      def websocket_closed(generation, ws, exception)
+        return unless current_connection?(generation, ws)
+        info "Connection closing...: #{exception}"
+        connection_attempt_failed(generation, exception || StandardError.new("Websocket closed"), ws)
+      end
+
+      def websocket_errored(generation, ws, exception)
+        return unless current_connection?(generation, ws)
+        error "Connection error: #{exception}"
+        connection_attempt_failed(generation, exception || StandardError.new("Websocket error"), ws)
       end
       
       def refresh_channels
-        return unless @ready
+        state = @state_mutex.synchronize do
+          [@ready, @ws, @connection_generation]
+        end
+        return unless state[0] && state[1]
+
+        ws = state[1]
+        generation = state[2]
         debug "Refreshing channels"
-        
-        # Join new channels
-        new_channels = @channels - @joined_channels
-        new_channels.each do |channel|
-          #msg = join_message(channel)
-          #@ws.send(msg.to_json)
-          msg = join_binary_message(channel)
-          @ws.send(msg)
-          info "Joined #{channel}"
+
+        desired_channels = nil
+        @channels_mutex.synchronize do
+          desired_channels = Array.new(@channels)
+          joined_channels = Array.new(@joined_channels)
+
+          # Keep the desired and server-side subscription sets in lockstep. Calls
+          # to join/leave wait briefly while these sends complete, then perform
+          # another refresh with their newer desired set.
+          new_channels = desired_channels - joined_channels
+          new_channels.each do |channel|
+            msg = join_binary_message(channel)
+            ws.send(msg, :type => :binary)
+            raise "Websocket changed while joining channels" unless current_connection?(generation, ws)
+            @joined_channels << channel unless @joined_channels.include?(channel)
+            info "Joined #{channel}"
+          end
+
+          old_channels = joined_channels - desired_channels
+          old_channels.each do |channel|
+            msg = leave_binary_message(channel)
+            ws.send(msg, :type => :binary)
+            raise "Websocket changed while leaving channels" unless current_connection?(generation, ws)
+            @joined_channels.delete(channel)
+            info "Left #{channel}"
+          end
         end
-        
-        # Leave old channels
-        old_channels = @joined_channels - @channels
-        old_channels.each do |channel|
-          #msg = leave__message(channel)
-          #@ws.send(msg.to_json)
-          msg = leave_binary_message(channel)
-          @ws.send(msg)
-          info "Left #{channel}"
-        end
-        
-        @channels.uniq!
-        @joined_channels = Array.new(@channels)
-        debug "Current channels: #{@channels}"
+
+        debug "Current channels: #{desired_channels}"
+        true
+      rescue StandardError => e
+        connection_attempt_failed(generation, e, ws) if generation && ws
+        false
       end
       
       def try_self_heal
-        return if @closing
+        delay = nil
+        @state_mutex.synchronize do
+          return if @closing || @ready || @connecting || @selfheal_timer
+
+          delay = @selfheal_backoffs.first
+          @selfheal_backoffs.delete_at(0) if @selfheal_backoffs.count > 1
+          # A marker prevents close and error callbacks for the same failed socket
+          # from scheduling two reconnect loops before EM.add_timer returns.
+          @selfheal_timer = :scheduling
+        end
         debug "Attempting to self-heal"
-        
-        time = @selfheal_backoffs.first
-        @selfheal_backoffs.delete_at(0) if @selfheal_backoffs.count > 1
-        
-        EM.cancel_timer(@selfheal_timer) if @selfheal_timer
-        
-        @selfheal_timer = EM.add_timer(time/1000) do
-          connect()
+
+        timer = nil
+        timer = EM.add_timer(delay / 1000.0) do
+          should_connect = @state_mutex.synchronize do
+            active = @selfheal_timer.equal?(timer) || @selfheal_timer == :scheduling
+            @selfheal_timer = nil if active
+            active && !@closing && !@ready && !@connecting
+          end
+          connect if should_connect
+        end
+        @state_mutex.synchronize do
+          @selfheal_timer = timer if @selfheal_timer == :scheduling
         end
       end
       
       def stop_self_heal
-        EM.cancel_timer(@selfheal_timer) if @selfheal_timer
-        @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
+        timer = @state_mutex.synchronize do
+          value = @selfheal_timer
+          @selfheal_timer = nil
+          @selfheal_backoffs = Array.new(SELF_HEAL_BACKOFFS)
+          value
+        end
+        cancel_timer(timer)
+      end
+
+      def finish_authorization(generation, token)
+        authorized = @state_mutex.synchronize do
+          if generation == @connection_generation && @connecting && !@closing
+            @token = token
+            true
+          else
+            false
+          end
+        end
+        return unless authorized
+
+        refresh_websocket(generation)
+      rescue StandardError => e
+        connection_attempt_failed(generation, e)
+      end
+
+      def connection_attempt_failed(generation, exception, socket = nil)
+        failed_socket = nil
+        connect_timer = nil
+        current = @state_mutex.synchronize do
+          socket_matches = socket.nil? || @ws.equal?(socket)
+          if generation == @connection_generation && socket_matches && !@closing
+            failed_socket = @ws
+            @ws = nil
+            @ready = false
+            @connecting = false
+            connect_timer = @connect_timer
+            @connect_timer = nil
+            true
+          else
+            false
+          end
+        end
+        return unless current
+
+        @channels_mutex.synchronize {@joined_channels = []}
+        cancel_timer(connect_timer)
+        close_websocket(failed_socket, false)
+        message = exception.respond_to?(:message) ? exception.message : exception.to_s
+        error "Connection attempt failed: #{message}"
+        try_self_heal
+      end
+
+      def schedule_connect_timeout(generation, ws)
+        timer = EM.add_timer(@connect_timeout_seconds) do
+          connection_attempt_failed(
+            generation,
+            Timeout::Error.new("Websocket connect timed out after #{@connect_timeout_seconds} seconds"),
+            ws
+          )
+        end
+
+        previous_timer = nil
+        keep_timer = @state_mutex.synchronize do
+          if generation == @connection_generation && @ws.equal?(ws) && @connecting && !@closing
+            previous_timer = @connect_timer
+            @connect_timer = timer
+            true
+          else
+            false
+          end
+        end
+        cancel_timer(previous_timer)
+        cancel_timer(timer) unless keep_timer
+      end
+
+      def current_connection?(generation, ws)
+        @state_mutex.synchronize do
+          generation == @connection_generation && @ws.equal?(ws) && !@closing
+        end
+      end
+
+      def start_workers
+        @worker_mutex.synchronize do
+          live_threads = @threads.select(&:alive?)
+          return if live_threads.length == @thread_quantity
+
+          live_threads.each(&:kill)
+          @threads.each {|thread| thread.join(0.1) if thread.alive?}
+          @threads = []
+          clear_message_queues
+          @stop = false
+          @worker_generation += 1
+          generation = @worker_generation
+          @thread_quantity.times do
+            @threads << Thread.new {handle_data(generation)}
+          end
+        end
+      end
+
+      def stop_workers
+        @worker_mutex.synchronize do
+          @stop = true
+          @worker_generation += 1
+          threads = Array.new(@threads)
+          threads.length.times {@message_available.enq(@stop_message)}
+
+          threads.each do |thread|
+            next unless thread.alive?
+            next if thread.equal?(Thread.current)
+            unless thread.join(WORKER_JOIN_TIMEOUT_SECONDS)
+              warn "Worker thread timed out while stopping"
+              thread.kill
+              thread.join(0.1)
+            end
+          end
+
+          @threads = []
+          clear_message_queues
+          @stop = false
+        end
+      end
+
+      def clear_message_queues
+        @trade_messages.clear
+        @quote_messages.clear
+        @message_available.clear
+      end
+
+      def nonblocking_dequeue(queue)
+        queue.deq(true)
+      rescue ThreadError
+        nil
+      end
+
+      def close_websocket(ws, wait_for_close)
+        return if ws.nil?
+
+        close_thread = Thread.new do
+          begin
+            ws.close
+          rescue StandardError => e
+            error "Error closing websocket: #{e.message}"
+          end
+        end
+        return unless wait_for_close
+
+        unless close_thread.join(@close_timeout_seconds)
+          warn "Websocket close timed out"
+          close_thread.kill
+          close_thread.join(0.1)
+        end
+      end
+
+      def cancel_timer(timer)
+        return if timer.nil? || timer == :scheduling
+        EM.cancel_timer(timer)
+      rescue StandardError
+        nil
+      end
+
+      def schedule_on_reactor(&block)
+        if EM.reactor_running?
+          EM.schedule(&block)
+        else
+          block.call
+        end
       end
       
       def ready(val)
-        @ready = val
+        @state_mutex.synchronize {@ready = val}
       end
 
       def debug(message)
