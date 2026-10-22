@@ -64,7 +64,7 @@ Intrinio::Realtime.connect(options, on_trade, on_quote)
 
 ## Handling Quotes
 
-There are thousands of securities, each with their own feed of activity.  We highly encourage you to make your trade and quote handlers has short as possible and follow a queue pattern so your app can handle the volume of activity.
+There are thousands of securities, each with their own feed of activity. The client uses separate internal queues for trades and quotes and drains trades first so high quote volume does not delay trade processing. We highly encourage you to keep your trade and quote handlers as short as possible and follow a queue pattern in your application so it can handle the volume of activity.
 
 ## Quote Data Format
 
